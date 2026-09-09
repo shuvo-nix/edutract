@@ -1,0 +1,30 @@
+{
+  "name": "EduTract",
+  "short_name": "EduTract",
+  "description": "Professor directory for your academic application master lists. Local, private, filterable.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "assets/edutract-fav.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/edutract-fav.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/edutract-fav.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
