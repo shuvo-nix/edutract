@@ -9,6 +9,7 @@ const LS = {
   notes: 'edutract:notes',
   statuses: 'edutract:statuses',
   drafts: 'edutract:drafts',
+  emails: 'edutract:emails',
   theme: 'edutract:theme'
 };
 
@@ -83,6 +84,7 @@ const I = {
   chevronsUp: '<polyline points="7 11 12 6 17 11"/><polyline points="7 18 12 13 17 18"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
   arrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>'
 };
@@ -99,6 +101,7 @@ if (Array.isArray(bookmarksAll)) bookmarksAll = {};
 let notesAll = store.get(LS.notes, {}) || {};
 let statusesAll = store.get(LS.statuses, {}) || {};
 let draftsAll = store.get(LS.drafts, {}) || {};
+let emailsAll = store.get(LS.emails, {}) || {};
 let resumeFileId = null;
 
 let rows = [];
@@ -137,6 +140,12 @@ function statusOf(fid, uid) { return (statusesAll[fid] || {})[uid] || ''; }
   });
   if (changed) store.set(LS.statuses, statusesAll);
 })();
+
+function emailOf(fid, uid, row) {
+  const ov = (emailsAll[fid] || {})[uid];
+  if (ov != null && String(ov).trim() !== '') return String(ov).trim();
+  return firstEmailOf(row);
+}
 
 /* ==================== DOM refs ==================== */
 const $ = (s) => document.querySelector(s);
@@ -242,6 +251,17 @@ function linkify(text, mailto) {
 }
 
 function attrSel(v) { return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"'); }
+
+function positionMenu(menu, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  let left = Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8));
+  let top = rect.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - 6);
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+}
 
 let toastTimer;
 function toast(msg, isError) {
@@ -428,10 +448,10 @@ function cardHTML(row, fid, opts) {
   const df = draftsAll[fid] || {};
   const draft = df[uid] != null ? df[uid] : row.emailDraft;
   const nt = notesAll[fid] || {};
+  const currentEmail = emailOf(fid, uid, row);
   const parts = splitDraft(draft);
-  const mailAddr = firstEmailOf(row);
-  const mailHref = mailAddr
-    ? 'mailto:' + encodeURIComponent(mailAddr) + '?subject=' + encodeURIComponent(parts.subject) + '&body=' + encodeURIComponent(parts.body)
+  const mailHref = currentEmail
+    ? 'mailto:' + encodeURIComponent(currentEmail) + '?subject=' + encodeURIComponent(parts.subject) + '&body=' + encodeURIComponent(parts.body)
     : '';
 
   let fields = '';
@@ -439,7 +459,10 @@ function cardHTML(row, fid, opts) {
   if (row.research) fields += fieldHTML('Research fit', esc(row.research));
   fields += fieldHTML('Areas', '<div class="chips">' + row.areas.map(function (a) { return '<span class="chip">' + esc(a) + '</span>'; }).join('') + '</div>');
   if (row.hiring) fields += fieldHTML('Hiring status', esc(row.hiring));
-  if (row.email) fields += fieldHTML('Email', linkify(row.email, true));
+  fields += '<div class="field"><div class="field-label">Email</div><div class="field-value email-value" data-email="' + esc(currentEmail) + '">' +
+    (currentEmail ? linkify(currentEmail, true) : '<span class="muted">Not set</span>') +
+    ' <button type="button" class="mini-btn inline-edit" data-action="editemail" title="Edit email" aria-label="Edit email">' + icon('pencil', 13) + '</button>' +
+  '</div></div>';
   if (row.website) fields += fieldHTML('Website', linkify(row.website));
   if (row.profile) fields += fieldHTML('Profile / vacancy', linkify(row.profile));
   if (row.documents) fields += fieldHTML('How to apply', esc(row.documents));
@@ -468,8 +491,8 @@ function cardHTML(row, fid, opts) {
         '<div class="field"><div class="field-label">Email draft <span class="muted">(editable, edits are saved)</span></div>' +
           '<textarea class="draft" spellcheck="false">' + esc(draft) + '</textarea>' +
           '<div class="draft-actions">' +
-            '<button class="btn btn-primary" data-action="copy">' + icon('copy', 15) + ' Copy draft</button>' +
-            (mailHref ? '<a class="btn btn-ghost" href="' + esc(mailHref) + '">' + icon('mail', 15) + ' Open in mail app</a>' : '') +
+            (mailHref ? '<a class="btn btn-primary" href="' + esc(mailHref) + '">' + icon('send', 15) + ' Send</a>' : '') +
+            '<button class="btn btn-ghost" data-action="copy">' + icon('copy', 15) + ' Copy draft</button>' +
             (opts.showFile ? '<button class="btn btn-ghost" data-action="openfile">' + icon('arrowLeft', 15) + ' Open in file</button>' : '') +
           '</div>' +
         '</div>' +
@@ -537,17 +560,87 @@ function currentViewEntries() {
   return rows.map(function (r) { return { r: r, fid: activeFileId }; });
 }
 
+/* ==================== Custom filter dropdowns ==================== */
+const SORT_OPTIONS = [
+  { v: 'priority', l: 'Priority' },
+  { v: 'name', l: 'Name A-Z' },
+  { v: 'institution', l: 'Institution' }
+];
+const DD_DEFS = [
+  { id: 'dd-priority', key: 'priority', label: 'Priority' },
+  { id: 'dd-area', key: 'area', label: 'Area' },
+  { id: 'dd-location', key: 'location', label: 'Location' },
+  { id: 'dd-status', key: 'status', label: 'Status' },
+  { id: 'dd-sort', key: 'sort', label: 'Sort' }
+];
+const ddOptions = {
+  priority: [],
+  area: [],
+  location: [],
+  status: STATUS_VALUES.slice(),
+  sort: SORT_OPTIONS.map(function (o) { return o.v; })
+};
+
+function ddValueLabel(key, v) {
+  if (key === 'sort') {
+    for (let i = 0; i < SORT_OPTIONS.length; i++) {
+      if (SORT_OPTIONS[i].v === v) return SORT_OPTIONS[i].l;
+    }
+  }
+  return v;
+}
+
+function renderDDTriggers() {
+  DD_DEFS.forEach(function (def) {
+    const el = $('#' + def.id);
+    if (!el) return;
+    const v = filters[def.key];
+    const label = v === 'all' ? def.label : ddValueLabel(def.key, v);
+    el.innerHTML = '<button type="button" class="dd-trigger' + (v !== 'all' ? ' has-value' : '') + '" data-dd="' + def.key + '" aria-haspopup="listbox">' +
+      '<span class="dd-text">' + esc(label) + '</span>' + icon('chevron', 13) +
+    '</button>';
+  });
+}
+
+function closeDropdown() {
+  const m = document.getElementById('dd-menu');
+  if (m) m.remove();
+}
+
+function openDropdown(key, trigger) {
+  closeDropdown();
+  const menu = document.createElement('div');
+  menu.className = 'dd-menu';
+  menu.id = 'dd-menu';
+  menu.dataset.key = key;
+  let html = '';
+  if (key !== 'sort') {
+    html += '<button type="button" class="dd-item' + (filters[key] === 'all' ? ' current' : '') + '" data-value="all">All</button>';
+  }
+  ddOptions[key].forEach(function (v) {
+    html += '<button type="button" class="dd-item' + (filters[key] === v ? ' current' : '') + '" data-value="' + esc(v) + '">' + esc(ddValueLabel(key, v)) + '</button>';
+  });
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  positionMenu(menu, trigger);
+  menu.addEventListener('click', function (e) {
+    const item = e.target.closest('.dd-item');
+    if (!item) return;
+    filters[key] = item.dataset.value;
+    closeDropdown();
+    renderDDTriggers();
+    rerenderCurrent();
+  });
+}
+
 function populateSelects() {
   const pairs = currentViewEntries();
   const areas = [];
   const locations = [];
-  const statuses = [];
   const prios = [];
   pairs.forEach(function (p) {
     (p.r.areas || []).forEach(function (a) { if (areas.indexOf(a) === -1) areas.push(a); });
     if (p.r.location && locations.indexOf(p.r.location) === -1) locations.push(p.r.location);
-    const st = statusOf(p.fid, p.r.uid) || 'Saved';
-    if (statuses.indexOf(st) === -1) statuses.push(st);
     const pr = String(p.r.priority || '').toUpperCase();
     if (pr && prios.indexOf(pr) === -1) prios.push(pr);
   });
@@ -555,26 +648,14 @@ function populateSelects() {
   locations.sort();
   const prioOrder = ['A', 'B', 'C'];
   prios.sort(function (a, b) { return prioOrder.indexOf(a) - prioOrder.indexOf(b); });
-  statuses.sort(function (a, b) { return STATUS_VALUES.indexOf(a) - STATUS_VALUES.indexOf(b); });
-
-  function fill(id, label, values, key) {
-    const sel = $('#' + id);
-    let html = '<option value="all">' + label + ' · All</option>';
-    values.forEach(function (v) {
-      html += '<option value="' + esc(v) + '">' + esc(v) + '</option>';
-    });
-    sel.innerHTML = html;
-    if (filters[key] !== 'all' && values.indexOf(filters[key]) === -1) {
-      filters[key] = 'all';
-      sel.value = 'all';
-    } else {
-      sel.value = filters[key];
-    }
-  }
-  fill('f-priority', 'Priority', prios, 'priority');
-  fill('f-area', 'Research area', areas, 'area');
-  fill('f-location', 'Location', locations, 'location');
-  fill('f-status', 'Status', statuses, 'status');
+  ddOptions.priority = prios;
+  ddOptions.area = areas;
+  ddOptions.location = locations;
+  ddOptions.status = STATUS_VALUES.slice();
+  ['priority', 'area', 'location'].forEach(function (key) {
+    if (filters[key] !== 'all' && ddOptions[key].indexOf(filters[key]) === -1) filters[key] = 'all';
+  });
+  renderDDTriggers();
 }
 
 /* ==================== Views ==================== */
@@ -669,14 +750,7 @@ function openStatusMenu(btn, fid, uid) {
     e.stopPropagation();
     closeStatusMenu();
   });
-  const rect = btn.getBoundingClientRect();
-  const mw = menu.offsetWidth;
-  const mh = menu.offsetHeight;
-  let left = Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8));
-  let top = rect.bottom + 6;
-  if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - 6);
-  menu.style.top = top + 'px';
-  menu.style.left = left + 'px';
+  positionMenu(menu, btn);
   menu.addEventListener('click', function (e) {
     const item = e.target.closest('.status-menu-item');
     if (!item) return;
@@ -685,15 +759,36 @@ function openStatusMenu(btn, fid, uid) {
   });
 }
 
+/* ==================== Email editing ==================== */
+function startEmailEdit(wrap, fid, uid, current) {
+  if (!wrap || wrap.querySelector('.email-input')) return;
+  wrap.innerHTML = '<input class="email-input" type="email" value="' + esc(current) + '" placeholder="name@example.com" aria-label="Email address" />' +
+    '<span class="email-edit-hint">Enter to save · Esc to cancel</span>';
+  const input = wrap.querySelector('.email-input');
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = function (save) {
+    if (done) return;
+    done = true;
+    if (save) {
+      if (!emailsAll[fid]) emailsAll[fid] = {};
+      emailsAll[fid][uid] = input.value.trim();
+      store.set(LS.emails, emailsAll);
+      toast('Email saved');
+    }
+    rerenderCurrent();
+  };
+  input.addEventListener('blur', function () { finish(true); });
+  input.addEventListener('click', function (ev) { ev.stopPropagation(); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+    if (ev.key === 'Escape') { done = true; rerenderCurrent(); }
+  });
+}
+
 /* ==================== File operations ==================== */
 function persistFiles() { store.set(LS.files, files); }
-function persistAll() {
-  store.set(LS.files, files);
-  store.set(LS.bookmarks, bookmarksAll);
-  store.set(LS.notes, notesAll);
-  store.set(LS.statuses, statusesAll);
-  store.set(LS.drafts, draftsAll);
-}
 
 function openFile(fid, focusUid) {
   const f = files[fid];
@@ -724,7 +819,13 @@ function deleteFile(fid) {
   delete notesAll[fid];
   delete statusesAll[fid];
   delete draftsAll[fid];
-  persistAll();
+  delete emailsAll[fid];
+  store.set(LS.files, files);
+  store.set(LS.bookmarks, bookmarksAll);
+  store.set(LS.notes, notesAll);
+  store.set(LS.statuses, statusesAll);
+  store.set(LS.drafts, draftsAll);
+  store.set(LS.emails, emailsAll);
   if (activeFileId === fid) {
     activeFileId = null;
     store.set(LS.active, null);
@@ -791,14 +892,18 @@ function renderFileList() {
     const when = f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '-';
     return (
       '<div class="file-row' + (fid === activeFileId ? ' active-file' : '') + '" data-fid="' + esc(fid) + '">' +
-        '<div class="file-icon">' + icon('file', 20) + '</div>' +
         '<div class="file-info">' +
-          '<span class="file-name">' + esc(f.name) + '</span>' +
-          '<span class="file-meta">' + (f.count || 0) + ' entries · ' + esc(when) + '</span>' +
-        '</div>' +
-        '<div class="file-actions">' +
-          '<button class="mini-btn" data-action="rename" title="Rename">' + icon('pencil', 15) + '</button>' +
-          '<button class="mini-btn danger" data-action="delete" title="Delete">' + icon('trash', 15) + '</button>' +
+          '<div class="file-line1">' +
+            '<span class="file-name">' + esc(f.name) + '</span>' +
+            '<span class="file-actions">' +
+              '<button class="mini-btn" data-action="rename" title="Rename">' + icon('pencil', 15) + '</button>' +
+              '<button class="mini-btn danger" data-action="delete" title="Delete">' + icon('trash', 15) + '</button>' +
+            '</span>' +
+          '</div>' +
+          '<div class="file-line2">' +
+            '<span class="file-meta">' + (f.count || 0) + ' entries · ' + esc(when) + '</span>' +
+            '<button class="btn btn-ghost btn-open-file" data-action="open">Open</button>' +
+          '</div>' +
         '</div>' +
       '</div>'
     );
@@ -901,6 +1006,12 @@ function cardClickHandler(e) {
     return;
   }
 
+  if (action === 'editemail') {
+    const wrap = actionEl.closest('.email-value');
+    if (wrap) startEmailEdit(wrap, fid, uid, wrap.dataset.email || '');
+    return;
+  }
+
   if (action === 'toggle') {
     if (openIds.has(uid)) { openIds.delete(uid); card.classList.remove('open'); }
     else { openIds.add(uid); card.classList.add('open'); }
@@ -910,6 +1021,7 @@ function cardClickHandler(e) {
     const i = arr.indexOf(uid);
     if (i === -1) arr.push(uid); else arr.splice(i, 1);
     store.set(LS.bookmarks, bookmarksAll);
+    populateSelects();
     rerenderCurrent();
   } else if (action === 'copy') {
     const ta = card.querySelector('.draft');
@@ -944,9 +1056,13 @@ function cardInputHandler(e) {
 /* ==================== Events: shared toolbar ==================== */
 $('#f-search').addEventListener('input', function (e) { filters.q = e.target.value; rerenderCurrent(); });
 
-const FILTER_MAP = { 'f-priority': 'priority', 'f-area': 'area', 'f-location': 'location', 'f-status': 'status', 'f-sort': 'sort' };
-Object.keys(FILTER_MAP).forEach(function (id) {
-  $('#' + id).addEventListener('change', function (e) { filters[FILTER_MAP[id]] = e.target.value; rerenderCurrent(); });
+toolbarEl.addEventListener('click', function (e) {
+  const trig = e.target.closest('.dd-trigger');
+  if (!trig) return;
+  const key = trig.dataset.dd;
+  const menu = document.getElementById('dd-menu');
+  if (menu && menu.dataset.key === key) { closeDropdown(); return; }
+  openDropdown(key, trig);
 });
 
 $('#f-bookmarked').addEventListener('click', function () {
@@ -969,10 +1085,9 @@ function resetFilters() {
   filters.q = ''; filters.priority = 'all'; filters.area = 'all';
   filters.location = 'all'; filters.status = 'all'; filters.bookmarked = false; filters.sort = 'priority';
   $('#f-search').value = '';
-  $('#f-sort').value = 'priority';
   $('#f-bookmarked').classList.remove('active');
   $('#f-bookmarked').setAttribute('aria-pressed', 'false');
-  populateSelects();
+  renderDDTriggers();
   rerenderCurrent();
 }
 $('#f-reset').addEventListener('click', resetFilters);
@@ -1005,7 +1120,7 @@ $('#btn-all-files').addEventListener('click', openPanel);
 $('#panel-clear-all').addEventListener('click', function () {
   showConfirm({
     title: 'Delete all data?',
-    message: 'All files, bookmarks, notes, statuses and drafts will be permanently removed from this browser.',
+    message: 'All files, bookmarks, notes, statuses, emails and drafts will be permanently removed from this browser.',
     okLabel: 'Delete everything',
     onOk: function () {
       Object.values(LS).forEach(function (k) { store.remove(k); });
@@ -1023,13 +1138,10 @@ $('#file-list').addEventListener('click', function (e) {
   if (!row) return;
   const fid = row.dataset.fid;
   const btn = e.target.closest('[data-action]');
-  if (btn) {
-    if (btn.dataset.action === 'rename') startRename(row, fid);
-    else if (btn.dataset.action === 'delete') confirmDeleteFile(fid);
-    return;
-  }
-  closePanels();
-  openFile(fid);
+  if (!btn) return;
+  if (btn.dataset.action === 'rename') startRename(row, fid);
+  else if (btn.dataset.action === 'delete') confirmDeleteFile(fid);
+  else if (btn.dataset.action === 'open') { closePanels(); openFile(fid); }
 });
 
 $('#modal-ok').addEventListener('click', function () {
@@ -1041,21 +1153,26 @@ $('#modal-cancel').addEventListener('click', hideModal);
 $('#modal .modal-backdrop').addEventListener('click', hideModal);
 
 document.addEventListener('click', function (e) {
-  const menu = document.getElementById('status-menu');
-  if (!menu) return;
-  if (menu.contains(e.target)) return;
-  if (e.target.closest && e.target.closest('[data-action="statusmenu"]')) return;
-  closeStatusMenu();
+  const sm = document.getElementById('status-menu');
+  if (sm && !sm.contains(e.target) && !(e.target.closest && e.target.closest('[data-action="statusmenu"]'))) {
+    closeStatusMenu();
+  }
+  const dm = document.getElementById('dd-menu');
+  if (dm && !dm.contains(e.target) && !(e.target.closest && e.target.closest('.dd-trigger'))) {
+    closeDropdown();
+  }
 });
 
 window.addEventListener('scroll', function (e) {
-  if (e.target && e.target.closest && e.target.closest('.status-menu')) return;
+  if (e.target && e.target.closest && (e.target.closest('.status-menu') || e.target.closest('.dd-menu'))) return;
   closeStatusMenu();
+  closeDropdown();
 }, true);
 
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
   closeStatusMenu();
+  closeDropdown();
   if (!$('#modal').hidden) { hideModal(); return; }
   closePanels();
 });
