@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EduTract — Professor Directory</title>
-  <meta name="description" content="Upload your Excel master list and browse professors, labs, and PhD openings with filters, bookmarks, and email drafts. All local, all private." />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>" />
+  <meta name="description" content="Upload your Excel master lists and browse professors, labs, and PhD openings with filters, bookmarks, and email drafts. All local, all private." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f46e5'/%3E%3Ctext x='50' y='66' font-size='44' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'%3EET%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -21,11 +21,21 @@
           <span class="brand-sub">Professor Directory</span>
         </div>
       </div>
-      <div class="topbar-actions">
-        <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
-        <button id="btn-upload-new" class="btn btn-ghost" hidden>↻ New file</button>
-        <button id="btn-clear" class="btn btn-danger" hidden>Clear data</button>
-      </div>
+      <nav class="topbar-actions">
+        <button id="btn-add" class="icon-btn" title="Add file" aria-label="Add file">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button id="btn-clear" class="icon-btn" title="Clear all data" aria-label="Clear all data">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+        <button id="btn-bookmarks" class="icon-btn" title="Bookmarked entries (all files)" aria-label="Bookmarked entries">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+        <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+        <button id="btn-files" class="icon-btn" title="Your files" aria-label="Your files">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      </nav>
     </div>
   </header>
 
@@ -39,15 +49,17 @@
 
       <div id="resume-card" class="resume-card" hidden>
         <div class="resume-info">
-          <div class="resume-icon">📂</div>
+          <div class="resume-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
           <div>
-            <h3 id="resume-title">Saved session found</h3>
+            <h3 id="resume-title">Continue where you left off</h3>
             <p id="resume-meta"></p>
           </div>
         </div>
         <div class="resume-actions">
-          <button id="btn-resume" class="btn btn-primary">Open directory</button>
-          <button id="btn-discard" class="btn btn-ghost">Discard</button>
+          <button id="btn-resume" class="btn btn-primary">Open</button>
+          <button id="btn-all-files" class="btn btn-ghost">All files</button>
         </div>
       </div>
 
@@ -57,14 +69,23 @@
         </div>
         <p class="dz-title">Drop your Excel file here</p>
         <p class="dz-sub">or <span class="dz-browse">browse files</span> · .xlsx / .xls</p>
-        <p class="dz-note">🔒 Everything stays on your device — nothing is uploaded to any server.</p>
+        <p class="dz-note">Everything stays on your device — nothing is uploaded to any server.</p>
         <input type="file" id="file-input" accept=".xlsx,.xls" hidden />
       </div>
 
       <div class="features">
-        <div class="feature"><span class="f-icon">🔍</span><h4>Filter &amp; search</h4><p>By location, research area, priority, hiring status and more.</p></div>
-        <div class="feature"><span class="f-icon">✉️</span><h4>Email drafts</h4><p>Ready-to-copy drafts tailored to every professor.</p></div>
-        <div class="feature"><span class="f-icon">★</span><h4>Bookmarks &amp; notes</h4><p>Saved locally in your browser — resume anytime.</p></div>
+        <div class="feature">
+          <span class="f-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+          <h4>Filter & search</h4><p>By location, research area, priority, hiring status and more.</p>
+        </div>
+        <div class="feature">
+          <span class="f-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+          <h4>Email drafts</h4><p>Ready-to-copy drafts tailored to every professor.</p>
+        </div>
+        <div class="feature">
+          <span class="f-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+          <h4>Bookmarks & notes</h4><p>Saved locally in your browser — resume anytime.</p>
+        </div>
       </div>
     </section>
 
@@ -100,7 +121,9 @@
 
       <div id="list" class="list"></div>
       <div id="empty" class="empty" hidden>
-        <p class="empty-icon">🔎</p>
+        <div class="empty-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
         <p>No entries match your filters.</p>
         <button class="btn btn-ghost" id="btn-empty-reset">Reset filters</button>
       </div>
@@ -108,6 +131,61 @@
   </main>
 
   <footer class="footer"><p>EduTract · runs 100% in your browser · data stored locally</p></footer>
+
+  <!-- ============ File manager panel ============ -->
+  <div id="panel-files" class="panel" hidden>
+    <div class="panel-backdrop" data-close-panel></div>
+    <aside class="panel-body" role="dialog" aria-label="Your files">
+      <header class="panel-head">
+        <h3>Your files</h3>
+        <button class="mini-btn" data-close-panel aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </header>
+      <div class="panel-content">
+        <button id="panel-add-file" class="btn btn-primary panel-add">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add file
+        </button>
+        <div id="file-list"></div>
+        <div id="files-empty" class="panel-empty" hidden>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <p>No files yet.</p>
+          <p class="sub">Upload an Excel file to get started.</p>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============ Bookmarks panel ============ -->
+  <div id="panel-bookmarks" class="panel" hidden>
+    <div class="panel-backdrop" data-close-panel></div>
+    <aside class="panel-body" role="dialog" aria-label="Bookmarked entries">
+      <header class="panel-head">
+        <h3>Bookmarked entries</h3>
+        <button class="mini-btn" data-close-panel aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </header>
+      <div class="panel-content" id="bm-content"></div>
+    </aside>
+  </div>
+
+  <!-- ============ Confirm modal ============ -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="alertdialog" aria-modal="true">
+      <div class="modal-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+      <h3 id="modal-title"></h3>
+      <p id="modal-message"></p>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="modal-ok" class="btn btn-danger-solid">Delete</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="toast" hidden>Copied!</div>
 
