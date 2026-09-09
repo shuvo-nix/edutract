@@ -78,6 +78,8 @@ const I = {
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   pencil: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
+  chevronsDown: '<polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/>',
+  chevronsUp: '<polyline points="7 11 12 6 17 11"/><polyline points="7 18 12 13 17 18"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
@@ -96,39 +98,53 @@ if (Array.isArray(bookmarksAll)) bookmarksAll = {};
 let notesAll = store.get(LS.notes, {}) || {};
 let statusesAll = store.get(LS.statuses, {}) || {};
 let draftsAll = store.get(LS.drafts, {}) || {};
+let resumeFileId = null;
 
 let rows = [];
 let openIds = new Set();
 let expandAllState = false;
 const filters = { q: '', priority: 'all', area: 'all', location: 'all', status: 'all', bookmarked: false, sort: 'priority' };
 
-/* ==================== Status (user-set only) ==================== */
-const STATUS_VALUES = ['Not contacted', 'Emailed', 'Applied', 'Interview scheduled', 'No response', 'Rejected'];
-const CHIP_SHORT = {
-  'Not contacted': 'Not contacted',
-  'Emailed': 'Emailed',
-  'Applied': 'Applied',
-  'Interview scheduled': 'Interview',
-  'No response': 'No response',
-  'Rejected': 'Rejected'
-};
+/* ==================== Status (user-set, default Saved) ==================== */
+const STATUS_VALUES = ['Saved', 'Ready', 'Contacted', 'Followed', 'Responded', 'Applied', 'Interview', 'Accepted', 'Rejected', 'No response'];
 const CHIP_CLASS = {
-  '': 'st-notset',
-  'Not contacted': 'st-other',
-  'Emailed': 'st-emailed',
+  'Saved': 'st-saved',
+  'Ready': 'st-ready',
+  'Contacted': 'st-contacted',
+  'Followed': 'st-followed',
+  'Responded': 'st-responded',
   'Applied': 'st-applied',
-  'Interview scheduled': 'st-interview',
-  'No response': 'st-no-response',
-  'Rejected': 'st-rejected'
+  'Interview': 'st-interview',
+  'Accepted': 'st-accepted',
+  'Rejected': 'st-rejected',
+  'No response': 'st-no-response'
 };
 
 function statusOf(fid, uid) { return (statusesAll[fid] || {})[uid] || ''; }
+
+(function migrateStatuses() {
+  const M = { 'Not contacted': 'Saved', 'Emailed': 'Contacted', 'Interview scheduled': 'Interview' };
+  let changed = false;
+  Object.keys(statusesAll).forEach(function (fid) {
+    const m = statusesAll[fid];
+    Object.keys(m).forEach(function (uid) {
+      let v = m[uid];
+      if (M[v]) v = M[v];
+      if (STATUS_VALUES.indexOf(v) === -1) v = 'Saved';
+      if (v !== m[uid]) { m[uid] = v; changed = true; }
+    });
+  });
+  if (changed) store.set(LS.statuses, statusesAll);
+})();
 
 /* ==================== DOM refs ==================== */
 const $ = (s) => document.querySelector(s);
 const uploadView = $('#upload-view');
 const directoryView = $('#directory-view');
 const bookmarksView = $('#bookmarks-view');
+const toolbarEl = $('#toolbar');
+const bmPageHeadEl = $('#bm-page-head');
+const resumeCard = $('#resume-card');
 const dropzone = $('#dropzone');
 const fileInput = $('#file-input');
 const listEl = $('#list');
@@ -373,10 +389,7 @@ function applyFilters() {
     if (filters.priority !== 'all' && String(r.priority || '').toUpperCase() !== filters.priority) return false;
     if (filters.area !== 'all' && r.areas.indexOf(filters.area) === -1) return false;
     if (filters.location !== 'all' && r.location !== filters.location) return false;
-    if (filters.status !== 'all') {
-      const v = statusOf(activeFileId, r.uid) || 'none';
-      if (v !== filters.status) return false;
-    }
+    if (filters.status !== 'all' && (statusOf(activeFileId, r.uid) || 'Saved') !== filters.status) return false;
     if (q) {
       const hay = (r.name || '') + ' ' + (r.institution || '') + ' ' + (r.research || '') + ' ' + (r.angle || '') + ' ' + (r.role || '');
       if (hay.toLowerCase().indexOf(q) === -1) return false;
@@ -409,7 +422,7 @@ function cardHTML(row, fid, opts) {
   opts = opts || {};
   const uid = row.uid;
   const marked = (bookmarksAll[fid] || []).indexOf(row.uid) !== -1;
-  const ov = statusOf(fid, uid);
+  const ov = statusOf(fid, uid) || 'Saved';
   const df = draftsAll[fid] || {};
   const draft = df[uid] != null ? df[uid] : row.emailDraft;
   const nt = notesAll[fid] || {};
@@ -418,11 +431,6 @@ function cardHTML(row, fid, opts) {
   const mailHref = mailAddr
     ? 'mailto:' + encodeURIComponent(mailAddr) + '?subject=' + encodeURIComponent(parts.subject) + '&body=' + encodeURIComponent(parts.body)
     : '';
-
-  let chipOpts = '<option value="">Status</option>';
-  STATUS_VALUES.forEach(function (v) {
-    chipOpts += '<option value="' + esc(v) + '"' + (ov === v ? ' selected' : '') + '>' + esc(CHIP_SHORT[v]) + '</option>';
-  });
 
   let fields = '';
   if (row.role) fields += fieldHTML('Role', esc(row.role));
@@ -445,7 +453,7 @@ function cardHTML(row, fid, opts) {
         '</div>' +
         '<div class="card-badges">' +
           (row.priority ? '<span class="badge prio-' + esc(String(row.priority).toLowerCase()) + '">' + esc(row.priority) + '</span>' : '') +
-          '<select class="status-select status-chip ' + (CHIP_CLASS[ov] || 'st-notset') + '" data-action="status" data-uid="' + esc(uid) + '" title="Set status" aria-label="Set status">' + chipOpts + '</select>' +
+          '<button type="button" class="status-chip ' + (CHIP_CLASS[ov] || 'st-saved') + '" data-action="statusmenu" data-uid="' + esc(uid) + '" title="Change status" aria-label="Change status">' + esc(ov) + '</button>' +
           (opts.showFile && files[fid] ? '<span class="badge file-badge" title="' + esc(files[fid].name) + '">' + esc(files[fid].name) + '</span>' : '') +
           '<span class="chevron" data-action="toggle">' + icon('chevron', 14) + '</span>' +
         '</div>' +
@@ -477,6 +485,8 @@ function renderList() {
 }
 
 function renderBookmarksPage() {
+  const q = filters.q.trim().toLowerCase();
+  const order = { a: 0, b: 1, c: 2 };
   const entries = [];
   Object.keys(files).forEach(function (fid) {
     const bms = bookmarksAll[fid] || [];
@@ -485,15 +495,29 @@ function renderBookmarksPage() {
       if (bms.indexOf(r.uid) !== -1) entries.push({ r: r, fid: fid });
     });
   });
-  const order = { a: 0, b: 1, c: 2 };
-  entries.sort(function (x, y) {
+  const filtered = entries.filter(function (e) {
+    const r = e.r;
+    if (filters.priority !== 'all' && String(r.priority || '').toUpperCase() !== filters.priority) return false;
+    if (filters.area !== 'all' && r.areas.indexOf(filters.area) === -1) return false;
+    if (filters.location !== 'all' && r.location !== filters.location) return false;
+    if (filters.status !== 'all' && (statusOf(e.fid, r.uid) || 'Saved') !== filters.status) return false;
+    if (q) {
+      const hay = (r.name || '') + ' ' + (r.institution || '') + ' ' + (r.research || '') + ' ' + (r.angle || '') + ' ' + (r.role || '');
+      if (hay.toLowerCase().indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+  filtered.sort(function (x, y) {
+    if (filters.sort === 'name') return String(x.r.name || '').localeCompare(String(y.r.name || ''));
+    if (filters.sort === 'institution') return String(x.r.institution || '').localeCompare(String(y.r.institution || ''));
     const px = order[String(x.r.priority || '').toLowerCase()];
     const py = order[String(y.r.priority || '').toLowerCase()];
     return ((px == null ? 9 : px) - (py == null ? 9 : py)) || String(x.r.name || '').localeCompare(String(y.r.name || ''));
   });
-  bmListEl.innerHTML = entries.map(function (e) { return cardHTML(e.r, e.fid, { showFile: true }); }).join('');
-  $('#bm-empty').hidden = entries.length > 0;
-  $('#bm-count').innerHTML = '<strong>' + entries.length + '</strong> bookmarked entries across all files';
+  if (expandAllState) filtered.forEach(function (e) { openIds.add(e.r.uid); });
+  bmListEl.innerHTML = filtered.map(function (e) { return cardHTML(e.r, e.fid, { showFile: true }); }).join('');
+  $('#bm-empty').hidden = filtered.length > 0;
+  statsEl.innerHTML = '<strong>' + filtered.length + '</strong> of ' + entries.length + ' bookmarked entries · all files';
 }
 
 function fillSelect(sel, label, values, labelMap) {
@@ -505,12 +529,19 @@ function fillSelect(sel, label, values, labelMap) {
 }
 
 function populateSelects() {
+  let source = rows;
+  if (!bookmarksView.hidden) {
+    source = [];
+    Object.keys(files).forEach(function (fid) {
+      source = source.concat(normalizeRows(files[fid].raw));
+    });
+  }
   const uniq = function (arr) { return Array.from(new Set(arr)).filter(Boolean).sort(); };
-  fillSelect($('#f-area'), 'Research area', uniq(rows.reduce(function (acc, r) { return acc.concat(r.areas); }, [])));
-  fillSelect($('#f-location'), 'Location', uniq(rows.map(function (r) { return r.location; })));
-  let stOpts = '<option value="all">Status · All</option><option value="none">Not set</option>';
+  fillSelect($('#f-area'), 'Research area', uniq(source.reduce(function (acc, r) { return acc.concat(r.areas); }, [])));
+  fillSelect($('#f-location'), 'Location', uniq(source.map(function (r) { return r.location; })));
+  let stOpts = '<option value="all">Status · All</option>';
   STATUS_VALUES.forEach(function (v) {
-    stOpts += '<option value="' + esc(v) + '">' + esc(CHIP_SHORT[v]) + '</option>';
+    stOpts += '<option value="' + esc(v) + '">' + esc(v) + '</option>';
   });
   $('#f-status').innerHTML = stOpts;
 }
@@ -528,6 +559,9 @@ function showView(which) {
   uploadView.hidden = which !== 'upload';
   directoryView.hidden = which !== 'directory';
   bookmarksView.hidden = which !== 'bookmarks';
+  toolbarEl.hidden = which === 'upload';
+  bmPageHeadEl.hidden = which !== 'bookmarks';
+  $('#f-bookmarked').hidden = which === 'bookmarks';
   syncNav();
 }
 
@@ -539,17 +573,75 @@ function showDirectory() {
 
 function showBookmarks() {
   showView('bookmarks');
+  populateSelects();
   renderBookmarksPage();
+}
+
+function showUpload() {
+  showView('upload');
+  updateResumeCard();
+}
+
+function updateResumeCard() {
+  const ids = Object.keys(files);
+  if (!ids.length) { resumeCard.hidden = true; return; }
+  let rf = (activeFileId && files[activeFileId]) ? activeFileId :
+    ids.slice().sort(function (a, b) { return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0); })[0];
+  resumeFileId = rf;
+  const f = files[rf];
+  resumeCard.hidden = false;
+  $('#resume-meta').textContent = f.name + ' · ' + (f.count || 0) + ' entries · ' + (f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '-');
 }
 
 function backFromBookmarks() {
   if (activeFileId && files[activeFileId]) showDirectory();
-  else showView('upload');
+  else showUpload();
 }
 
 function rerenderCurrent() {
   if (!directoryView.hidden) renderList();
   else if (!bookmarksView.hidden) renderBookmarksPage();
+}
+
+/* ==================== Status menu ==================== */
+function closeStatusMenu() {
+  const menu = document.getElementById('status-menu');
+  if (menu) menu.remove();
+}
+
+function setStatus(fid, uid, value) {
+  if (!statusesAll[fid]) statusesAll[fid] = {};
+  statusesAll[fid][uid] = value;
+  store.set(LS.statuses, statusesAll);
+  rerenderCurrent();
+}
+
+function openStatusMenu(btn, fid, uid) {
+  closeStatusMenu();
+  const current = statusOf(fid, uid) || 'Saved';
+  const menu = document.createElement('div');
+  menu.className = 'status-menu';
+  menu.id = 'status-menu';
+  let html = '';
+  STATUS_VALUES.forEach(function (v) {
+    html += '<button type="button" class="status-menu-item ' + (CHIP_CLASS[v] || '') + (v === current ? ' current' : '') + '" data-value="' + esc(v) + '">' + esc(v) + '</button>';
+  });
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const rect = btn.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  let left = Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8));
+  let top = rect.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - 6);
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+  menu.addEventListener('click', function (e) {
+    const item = e.target.closest('.status-menu-item');
+    if (!item) return;
+    setStatus(fid, uid, item.dataset.value);
+    closeStatusMenu();
+  });
 }
 
 /* ==================== File operations ==================== */
@@ -596,6 +688,7 @@ function deleteFile(fid) {
     activeFileId = null;
     store.set(LS.active, null);
     showView('upload');
+    updateResumeCard();
   }
   toast('Deleted "' + name + '"');
 }
@@ -757,7 +850,10 @@ function cardClickHandler(e) {
   const fid = card.dataset.fid;
   const action = actionEl.dataset.action;
 
-  if (action === 'status') return;
+  if (action === 'statusmenu') {
+    openStatusMenu(actionEl, fid, uid);
+    return;
+  }
 
   if (action === 'toggle') {
     if (openIds.has(uid)) { openIds.delete(uid); card.classList.remove('open'); }
@@ -794,45 +890,33 @@ function cardInputHandler(e) {
   }
 }
 
-function cardChangeHandler(e) {
-  const el = e.target;
-  if (!el.classList.contains('status-select')) return;
-  const card = el.closest('.card');
-  if (!card) return;
-  const uid = el.dataset.uid || card.dataset.uid;
-  const fid = card.dataset.fid;
-  if (!statusesAll[fid]) statusesAll[fid] = {};
-  statusesAll[fid][uid] = el.value;
-  store.set(LS.statuses, statusesAll);
-  rerenderCurrent();
-}
-
 [listEl, bmListEl].forEach(function (el) {
   el.addEventListener('click', cardClickHandler);
   el.addEventListener('input', cardInputHandler);
-  el.addEventListener('change', cardChangeHandler);
 });
 
-/* ==================== Events: filters ==================== */
-$('#f-search').addEventListener('input', function (e) { filters.q = e.target.value; renderList(); });
+/* ==================== Events: shared toolbar ==================== */
+$('#f-search').addEventListener('input', function (e) { filters.q = e.target.value; rerenderCurrent(); });
 
 const FILTER_MAP = { 'f-priority': 'priority', 'f-area': 'area', 'f-location': 'location', 'f-status': 'status', 'f-sort': 'sort' };
 Object.keys(FILTER_MAP).forEach(function (id) {
-  $('#' + id).addEventListener('change', function (e) { filters[FILTER_MAP[id]] = e.target.value; renderList(); });
+  $('#' + id).addEventListener('change', function (e) { filters[FILTER_MAP[id]] = e.target.value; rerenderCurrent(); });
 });
 
 $('#f-bookmarked').addEventListener('click', function () {
   filters.bookmarked = !filters.bookmarked;
   $('#f-bookmarked').classList.toggle('active', filters.bookmarked);
   $('#f-bookmarked').setAttribute('aria-pressed', String(filters.bookmarked));
-  renderList();
+  rerenderCurrent();
 });
 
 $('#btn-expand-all').addEventListener('click', function () {
   expandAllState = !expandAllState;
   if (!expandAllState) openIds.clear();
-  $('#btn-expand-all').textContent = expandAllState ? 'Collapse all' : 'Expand all';
-  renderList();
+  this.innerHTML = icon(expandAllState ? 'chevronsUp' : 'chevronsDown', 16);
+  this.title = expandAllState ? 'Collapse all' : 'Expand all';
+  this.setAttribute('aria-label', this.title);
+  rerenderCurrent();
 });
 
 function resetFilters() {
@@ -846,12 +930,12 @@ function resetFilters() {
   $('#f-sort').value = 'priority';
   $('#f-bookmarked').classList.remove('active');
   $('#f-bookmarked').setAttribute('aria-pressed', 'false');
-  renderList();
+  rerenderCurrent();
 }
 $('#f-reset').addEventListener('click', resetFilters);
 $('#btn-empty-reset').addEventListener('click', resetFilters);
 
-/* ==================== Events: topbar & panels ==================== */
+/* ==================== Events: topbar, home, panels ==================== */
 $('#btn-add').addEventListener('click', function () { closePanels(); fileInput.click(); });
 
 $('#btn-bookmarks').addEventListener('click', function () {
@@ -863,6 +947,17 @@ $('#btn-back-dir').addEventListener('click', backFromBookmarks);
 
 $('#btn-files').addEventListener('click', openPanel);
 $('#panel-add-file').addEventListener('click', function () { closePanels(); fileInput.click(); });
+
+$('#brand-home').addEventListener('click', function () {
+  closePanels();
+  closeStatusMenu();
+  showUpload();
+});
+
+$('#btn-resume').addEventListener('click', function () {
+  if (resumeFileId) openFile(resumeFileId);
+});
+$('#btn-all-files').addEventListener('click', openPanel);
 
 $('#panel-clear-all').addEventListener('click', function () {
   showConfirm({
@@ -902,8 +997,22 @@ $('#modal-ok').addEventListener('click', function () {
 $('#modal-cancel').addEventListener('click', hideModal);
 $('#modal .modal-backdrop').addEventListener('click', hideModal);
 
+document.addEventListener('click', function (e) {
+  const menu = document.getElementById('status-menu');
+  if (!menu) return;
+  if (menu.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('[data-action="statusmenu"]')) return;
+  closeStatusMenu();
+});
+
+window.addEventListener('scroll', function (e) {
+  if (e.target && e.target.closest && e.target.closest('.status-menu')) return;
+  closeStatusMenu();
+}, true);
+
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
+  closeStatusMenu();
   if (!$('#modal').hidden) { hideModal(); return; }
   closePanels();
 });
@@ -936,5 +1045,6 @@ $('#theme-toggle').addEventListener('click', function () {
     openFile(rf);
   } else {
     showView('upload');
+    updateResumeCard();
   }
 })();
