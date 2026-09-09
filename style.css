@@ -56,15 +56,12 @@ body.no-scroll { overflow: hidden; }
   max-width: 960px; margin: 0 auto; padding: 10px 20px;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
-.brand:hover .brand-name { color: var(--accent); }
+.brand { display: flex; align-items: center; min-width: 0; cursor: pointer; }
+.brand:hover .brand-logo { opacity: .85; }
 .brand-logo {
-  width: 36px; height: 36px; border-radius: 9px;
-  object-fit: cover; display: block; flex-shrink: 0;
+  height: 36px; width: auto; max-width: 200px;
+  object-fit: contain; display: block; flex-shrink: 0;
 }
-.brand-text { display: flex; flex-direction: column; line-height: 1.15; }
-.brand-name { font-weight: 800; font-size: 15px; letter-spacing: -.01em; }
-.brand-sub { font-size: 11px; color: var(--muted); }
 .topbar-actions { display: flex; gap: 8px; align-items: center; }
 .icon-btn {
   background: var(--surface); border: 1px solid var(--border);
@@ -74,6 +71,7 @@ body.no-scroll { overflow: hidden; }
 }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 .icon-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.install-btn { padding: 8px 14px; font-size: 13px; flex-shrink: 0; }
 
 main { max-width: 960px; margin: 0 auto; padding: 0 20px 60px; }
 
@@ -485,11 +483,12 @@ textarea:focus { outline: none; border-color: var(--accent); }
 }
 
 @media (max-width: 520px) {
-  .brand-sub { display: none; }
   .topbar-inner { padding: 8px 12px; }
   .topbar-actions { gap: 6px; }
   .icon-btn { width: 34px; height: 34px; }
   .icon-btn svg { width: 16px; height: 16px; }
+  .brand-logo { max-width: 140px; height: 32px; }
+  .install-btn { padding: 7px 11px; font-size: 12.5px; }
   main { padding: 0 14px 50px; }
   .filter-grid { gap: 6px; }
   .filter-grid .chip-toggle { flex: 0 0 auto; }
