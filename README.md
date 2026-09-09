@@ -1,18 +1,18 @@
-# EduTract · Professor Directory
+# EduTract | Professor Directory
 
 A fast, minimal, fully client-side web app to manage your academic application master lists.
 
-## Features
+## What it does
 
-- Multi-file support: upload as many Excel master lists as you like (.xlsx / .xls). Every file keeps its own bookmarks, notes, statuses and email drafts
-- Auto-open: your last file opens automatically on refresh, no landing page detour
-- File manager (folder icon): open, rename inline, or delete files with a confirmation dialog. Shows entry count and last-accessed time. Delete-all lives here too
-- Bookmarks page (star icon): a unified page of all bookmarked entries across all files, with file badges and Open-in-file jump buttons
-- Collapsible cards: click any entry to expand all details and links
-- Filters: full-text search, priority, research area, location, status, bookmarked-only, and sorting
-- User-set status: each entry has a status chip dropdown you control (Not contacted, Emailed, Applied, Interview, No response, Rejected). No auto-assigned statuses
-- Email drafts: auto-generated per entry, editable, wrap responsively, one-click copy, open-in-mail-app
-- Dark / light mode, fully responsive, modern minimal SVG icons
+- **Multi-file support**: upload as many Excel master lists as you like (.xlsx / .xls); every file keeps its own bookmarks, notes, statuses and email drafts
+- **Auto-resume**: refresh opens your last file directly, no re-uploading. The EduTract logo always takes you home
+- **File manager** (folder icon): all your files in one place, open, rename inline, delete with a confirmation dialog, or delete all data
+- **Master bookmarks page** (star icon): a unified page with all bookmarked entries across all files, with the same search, filters and sorting as the directory
+- **Status tracking**: every entry starts as Saved. Tap the status chip to open a colored chip menu and set Saved, Ready, Contacted, Followed, Responded, Applied, Interview, Accepted, Rejected or No response. The status filter follows your choices
+- **Collapsible cards** for every professor / lab / project: click to expand all details and links
+- **Filters**: full-text search, priority, research area, location, status, bookmarked-only, and sorting
+- **Auto-generated email drafts** per entry: editable, one-click copy, open in mail app; text wraps responsively on any screen
+- **Dark / light mode**, fully responsive, modern minimal SVG icons
 
 ## Expected Excel format
 
@@ -24,18 +24,18 @@ Header matching is flexible. Close variants work too. Research areas and locatio
 
 ## Run on GitHub Pages
 
-1. Repository, Settings, Pages
+1. Go to the repository, then Settings, then Pages
 2. Source: Deploy from a branch
-3. Branch: main / (root), Save
-4. Site URL: https://shuvo-nix.github.io/edutract/
+3. Branch: main / (root), then Save
+4. Your site will be live at: https://shuvo-nix.github.io/edutract/
 
 ## Run locally
 
-Open index.html in any modern browser. No build step, no dependencies.
+Just open index.html in any modern browser. No build step, no dependencies to install.
 
 ## Privacy
 
-Everything runs 100% in your browser. Your files, bookmarks, notes, and drafts are stored only in localStorage and never leave your device.
+Everything runs 100% in your browser. Your files, bookmarks, notes, and drafts are stored only in your browser's localStorage and never leave your device.
 
 ## Tech
 

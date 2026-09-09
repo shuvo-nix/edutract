@@ -14,7 +14,7 @@
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <div class="brand">
+      <div class="brand" id="brand-home" title="Home">
         <div class="brand-mark">ET</div>
         <div class="brand-text">
           <span class="brand-name">EduTract</span>
@@ -43,6 +43,22 @@
         <p class="hero-sub">Drop in your Excel export and get a clean, filterable directory of professors, labs and openings, with email drafts, bookmarks and notes that stay saved in your browser.</p>
       </div>
 
+      <div id="resume-card" class="resume-card" hidden>
+        <div class="resume-info">
+          <div class="resume-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div>
+            <h3 id="resume-title">Continue where you left off</h3>
+            <p id="resume-meta"></p>
+          </div>
+        </div>
+        <div class="resume-actions">
+          <button id="btn-resume" class="btn btn-primary">Open</button>
+          <button id="btn-all-files" class="btn btn-ghost">All files</button>
+        </div>
+      </div>
+
       <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload Excel file">
         <div class="dz-icon">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -56,7 +72,7 @@
       <div class="features">
         <div class="feature">
           <span class="f-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-          <h4>Filter and search</h4><p>By location, research area, priority, hiring status and more.</p>
+          <h4>Filter and search</h4><p>By location, research area, priority, status and more.</p>
         </div>
         <div class="feature">
           <span class="f-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
@@ -69,35 +85,45 @@
       </div>
     </section>
 
-    <section id="directory-view" hidden>
-      <div class="stats-row"><div id="stats" class="stats"></div></div>
-
-      <div class="toolbar" id="toolbar">
-        <div class="search-wrap">
-          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="search" id="f-search" placeholder="Search name, institution, research…" autocomplete="off" />
-        </div>
-        <div class="filter-grid">
-          <select id="f-priority" class="select" aria-label="Priority">
-            <option value="all">Priority · All</option>
-            <option value="A">A only</option>
-            <option value="B">B only</option>
-            <option value="C">C only</option>
-          </select>
-          <select id="f-area" class="select" aria-label="Research area"></select>
-          <select id="f-location" class="select" aria-label="Location"></select>
-          <select id="f-status" class="select" aria-label="Status"></select>
-          <select id="f-sort" class="select" aria-label="Sort">
-            <option value="priority">Sort · Priority</option>
-            <option value="name">Sort · Name A-Z</option>
-            <option value="institution">Sort · Institution</option>
-          </select>
-          <button id="f-bookmarked" class="chip-toggle" aria-pressed="false">★ Bookmarked</button>
-          <button id="btn-expand-all" class="chip-toggle">Expand all</button>
-          <button id="f-reset" class="chip-toggle danger">Reset filters</button>
-        </div>
+    <div class="toolbar" id="toolbar" hidden>
+      <div class="page-head" id="bm-page-head" hidden>
+        <h2>Bookmarked entries</h2>
+        <button id="btn-back-dir" class="btn btn-ghost">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to directory
+        </button>
       </div>
+      <div id="stats" class="stats"></div>
+      <div class="search-wrap">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="f-search" placeholder="Search name, institution, research…" autocomplete="off" />
+      </div>
+      <div class="filter-grid">
+        <select id="f-priority" class="select" aria-label="Priority">
+          <option value="all">Priority · All</option>
+          <option value="A">A only</option>
+          <option value="B">B only</option>
+          <option value="C">C only</option>
+        </select>
+        <select id="f-area" class="select" aria-label="Research area"></select>
+        <select id="f-location" class="select" aria-label="Location"></select>
+        <select id="f-status" class="select" aria-label="Status"></select>
+        <select id="f-sort" class="select" aria-label="Sort">
+          <option value="priority">Sort · Priority</option>
+          <option value="name">Sort · Name A-Z</option>
+          <option value="institution">Sort · Institution</option>
+        </select>
+        <button id="f-bookmarked" class="chip-toggle icon-only" aria-pressed="false" title="Bookmarked only">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+        <button id="btn-expand-all" class="chip-toggle icon-only" title="Expand all" aria-label="Expand all">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+        </button>
+        <button id="f-reset" class="chip-toggle danger" title="Reset filters">Reset</button>
+      </div>
+    </div>
 
+    <section id="directory-view" hidden>
       <div id="list" class="list"></div>
       <div id="empty" class="empty" hidden>
         <div class="empty-icon">
@@ -109,16 +135,6 @@
     </section>
 
     <section id="bookmarks-view" hidden>
-      <div class="page-head">
-        <div>
-          <h2>Bookmarked entries</h2>
-          <p id="bm-count" class="stats"></p>
-        </div>
-        <button id="btn-back-dir" class="btn btn-ghost">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-          Back to directory
-        </button>
-      </div>
       <div id="bm-list" class="list"></div>
       <div id="bm-empty" class="empty" hidden>
         <div class="empty-icon">
