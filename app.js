@@ -74,9 +74,7 @@ const I = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
-  folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
-  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   pencil: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
@@ -97,27 +95,45 @@ if (Array.isArray(bookmarksAll)) bookmarksAll = {};
 let notesAll = store.get(LS.notes, {}) || {};
 let statusesAll = store.get(LS.statuses, {}) || {};
 let draftsAll = store.get(LS.drafts, {}) || {};
-let resumeFileId = null;
 
 let rows = [];
 let openIds = new Set();
 let expandAllState = false;
 const filters = { q: '', priority: 'all', area: 'all', location: 'all', status: 'all', bookmarked: false, sort: 'priority' };
 
-function activeFile() { return files[activeFileId] || null; }
-function bmSet() { return new Set(bookmarksAll[activeFileId] || []); }
-function notesMap() { return notesAll[activeFileId] || {}; }
-function overridesMap() { return statusesAll[activeFileId] || {}; }
-function draftsMap() { return draftsAll[activeFileId] || {}; }
+/* ==================== Status config (user-set only) ==================== */
+const STATUS_VALUES = ['Not contacted', 'Emailed', 'Applied', 'Interview scheduled', 'No response', 'Rejected'];
+const STATUS_LABELS = {
+  'Not contacted': 'Not contacted',
+  'Emailed': 'Emailed',
+  'Applied': 'Applied',
+  'Interview scheduled': 'Interview',
+  'No response': 'No response',
+  'Rejected': 'Rejected'
+};
+const STATUS_CLASS = {
+  '': 'st-notset',
+  'Not contacted': 'st-other',
+  'Emailed': 'st-emailed',
+  'Applied': 'st-applied',
+  'Interview scheduled': 'st-interview',
+  'No response': 'st-no-response',
+  'Rejected': 'st-rejected'
+};
+
+function statusOf(fid, uid) { return (statusesAll[fid] || {})[uid] || ''; }
 
 /* ==================== DOM refs ==================== */
 const $ = (s) => document.querySelector(s);
 const uploadView = $('#upload-view');
 const directoryView = $('#directory-view');
+const bookmarksView = $('#bookmarks-view');
 const dropzone = $('#dropzone');
 const fileInput = $('#file-input');
 const listEl = $('#list');
+const bmListEl = $('#bm-list');
 const emptyEl = $('#empty');
+const bmEmptyEl = $('#bm-empty');
 const statsEl = $('#stats');
 
 /* ==================== Column mapping (flexible) ==================== */
@@ -180,30 +196,6 @@ const CITY_RULES = [
   [/aachen|rwth/i, 'Aachen']
 ];
 
-const BUCKET_LABELS = {
-  'open-verify': 'Open / verify',
-  'applied': 'Applied',
-  'emailed': 'Emailed',
-  'outreach': 'Outreach',
-  'future': 'Future contact',
-  'monitor': 'Monitor',
-  'interview': 'Interview',
-  'no-response': 'No response',
-  'rejected': 'Rejected',
-  'other': 'Other'
-};
-
-const OVERRIDE_BUCKET = {
-  'Not contacted': 'other',
-  'Emailed': 'emailed',
-  'Applied': 'applied',
-  'Interview scheduled': 'interview',
-  'No response': 'no-response',
-  'Rejected': 'rejected'
-};
-
-const STATUS_OPTIONS = ['Not contacted', 'Emailed', 'Applied', 'Interview scheduled', 'No response', 'Rejected'];
-
 /* ==================== Helpers ==================== */
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -261,7 +253,7 @@ async function copyText(text, btn) {
       setTimeout(function () { btn.innerHTML = old; }, 1500);
     }
   } else {
-    toast('Copy failed — please select the text manually.', true);
+    toast('Copy failed. Please select the text and copy manually.', true);
   }
 }
 
@@ -276,22 +268,6 @@ function detectLocation(row) {
   const s = row.institution || '';
   for (let i = 0; i < CITY_RULES.length; i++) { if (CITY_RULES[i][0].test(s)) return CITY_RULES[i][1]; }
   return 'Other';
-}
-
-function bucketOf(row) {
-  const ov = overridesMap()[row.uid];
-  if (ov && OVERRIDE_BUCKET[ov]) return OVERRIDE_BUCKET[ov];
-  const s = String(row.status || '');
-  if (/applied/i.test(s)) return 'applied';
-  if (/emailed|contacted/i.test(s)) return 'emailed';
-  if (/interview/i.test(s)) return 'interview';
-  if (/no ?response/i.test(s)) return 'no-response';
-  if (/rejected/i.test(s)) return 'rejected';
-  if (/future/i.test(s)) return 'future';
-  if (/monitor/i.test(s)) return 'monitor';
-  if (/outreach/i.test(s)) return 'outreach';
-  if (/open|verify|promptly|priority|high|apply/i.test(s)) return 'open-verify';
-  return 'other';
 }
 
 /* ==================== Email draft generation ==================== */
@@ -320,7 +296,7 @@ function buildEmail(row) {
   const research = firstSnippet(row.research) || 'human-centered AI';
   const angle = cleanAngle(firstSnippet(row.angle)) || 'empirical, human-centered evaluation of AI-supported systems';
   const lines = [
-    'Subject: Prospective PhD applicant — ' + who,
+    'Subject: Prospective PhD applicant - ' + who,
     '',
     greeting,
     '',
@@ -387,13 +363,16 @@ function normalizeRows(raw) {
 /* ==================== Filtering & sorting ==================== */
 function applyFilters() {
   const q = filters.q.trim().toLowerCase();
-  const bm = bmSet();
+  const bm = new Set(bookmarksAll[activeFileId] || []);
   const list = rows.filter(function (r) {
     if (filters.bookmarked && !bm.has(r.uid)) return false;
     if (filters.priority !== 'all' && String(r.priority || '').toUpperCase() !== filters.priority) return false;
     if (filters.area !== 'all' && r.areas.indexOf(filters.area) === -1) return false;
     if (filters.location !== 'all' && r.location !== filters.location) return false;
-    if (filters.status !== 'all' && bucketOf(r) !== filters.status) return false;
+    if (filters.status !== 'all') {
+      const v = statusOf(activeFileId, r.uid) || 'none';
+      if (v !== filters.status) return false;
+    }
     if (q) {
       const hay = (r.name || '') + ' ' + (r.institution || '') + ' ' + (r.research || '') + ' ' + (r.angle || '') + ' ' + (r.role || '');
       if (hay.toLowerCase().indexOf(q) === -1) return false;
@@ -422,21 +401,23 @@ function fieldHTML(label, valueHTML) {
   return '<div class="field"><div class="field-label">' + label + '</div><div class="field-value">' + valueHTML + '</div></div>';
 }
 
-function cardHTML(row) {
+function cardHTML(row, fid, opts) {
+  opts = opts || {};
   const uid = row.uid;
-  const marked = bmSet().has(uid);
-  const bucket = bucketOf(row);
-  const ov = overridesMap()[uid] || '';
-  const draft = draftsMap()[uid] != null ? draftsMap()[uid] : row.emailDraft;
+  const marked = (bookmarksAll[fid] || []).indexOf(uid) !== -1;
+  const ov = statusOf(fid, uid);
+  const draftsMapF = draftsAll[fid] || {};
+  const draft = draftsMapF[uid] != null ? draftsMapF[uid] : row.emailDraft;
+  const notesMapF = notesAll[fid] || {};
   const parts = splitDraft(draft);
   const mailAddr = firstEmailOf(row);
   const mailHref = mailAddr
     ? 'mailto:' + encodeURIComponent(mailAddr) + '?subject=' + encodeURIComponent(parts.subject) + '&body=' + encodeURIComponent(parts.body)
     : '';
 
-  let statusOptions = '';
-  STATUS_OPTIONS.forEach(function (o) {
-    statusOptions += '<option value="' + esc(o) + '"' + (ov === o ? ' selected' : '') + '>' + esc(o) + '</option>';
+  let chipOpts = '<option value="">Status</option>';
+  STATUS_VALUES.forEach(function (v) {
+    chipOpts += '<option value="' + esc(v) + '"' + (ov === v ? ' selected' : '') + '>' + esc(STATUS_LABELS[v]) + '</option>';
   });
 
   let fields = '';
@@ -451,7 +432,7 @@ function cardHTML(row) {
   if (row.angle) fields += fieldHTML('Suggested angle', esc(row.angle));
 
   return (
-    '<article class="card' + (openIds.has(uid) ? ' open' : '') + '" data-uid="' + esc(uid) + '">' +
+    '<article class="card' + (openIds.has(uid) ? ' open' : '') + '" data-uid="' + esc(uid) + '" data-fid="' + esc(fid) + '">' +
       '<header class="card-head" data-action="toggle">' +
         '<button class="star' + (marked ? ' marked' : '') + '" data-action="bookmark" title="Bookmark" aria-label="Bookmark">' + starIcon(marked, 18) + '</button>' +
         '<div class="card-title">' +
@@ -460,23 +441,22 @@ function cardHTML(row) {
         '</div>' +
         '<div class="card-badges">' +
           (row.priority ? '<span class="badge prio-' + esc(String(row.priority).toLowerCase()) + '">' + esc(row.priority) + '</span>' : '') +
-          '<span class="badge st-' + bucket + '">' + esc(BUCKET_LABELS[bucket] || bucket) + '</span>' +
+          '<select class="status-select status-chip ' + STATUS_CLASS[ov] + '" data-action="status" data-uid="' + esc(uid) + '" title="Set contact status">' + chipOpts + '</select>' +
+          (opts.showFile && files[fid] ? '<span class="badge file-badge" title="' + esc(files[fid].name) + '">' + esc(files[fid].name) + '</span>' : '') +
           '<span class="chevron" data-action="toggle">' + icon('chevron', 14) + '</span>' +
         '</div>' +
       '</header>' +
       '<div class="card-details"><div class="card-inner"><div class="card-body">' +
         fields +
-        '<div class="field"><div class="field-label">Contact status</div>' +
-          '<select class="status-select" data-uid="' + esc(uid) + '"><option value="">— from sheet —</option>' + statusOptions + '</select>' +
-        '</div>' +
         '<div class="field"><div class="field-label">Notes <span class="muted">(saved locally)</span></div>' +
-          '<textarea class="notes" placeholder="Add your notes…">' + esc(notesMap()[uid] || '') + '</textarea>' +
+          '<textarea class="notes" placeholder="Add your notes…">' + esc(notesMapF[uid] || '') + '</textarea>' +
         '</div>' +
-        '<div class="field"><div class="field-label">Email draft <span class="muted">(editable — edits are saved)</span></div>' +
+        '<div class="field"><div class="field-label">Email draft <span class="muted">(editable, edits are saved)</span></div>' +
           '<textarea class="draft" spellcheck="false">' + esc(draft) + '</textarea>' +
           '<div class="draft-actions">' +
             '<button class="btn btn-primary" data-action="copy">' + icon('copy', 15) + ' Copy draft</button>' +
             (mailHref ? '<a class="btn btn-ghost" href="' + esc(mailHref) + '">' + icon('mail', 15) + ' Open in mail app</a>' : '') +
+            (opts.showFile ? '<button class="btn btn-ghost" data-action="openfile">Open in file</button>' : '') +
           '</div>' +
         '</div>' +
       '</div></div></div>' +
@@ -487,15 +467,39 @@ function cardHTML(row) {
 function renderList() {
   const list = applyFilters();
   if (expandAllState) list.forEach(function (r) { openIds.add(r.uid); });
-  listEl.innerHTML = list.map(cardHTML).join('');
+  listEl.innerHTML = list.map(function (r) { return cardHTML(r, activeFileId); }).join('');
   emptyEl.hidden = list.length > 0;
-  statsEl.innerHTML = '<strong>' + list.length + '</strong> of ' + rows.length + ' entries · <strong>' + bmSet().size + '</strong> bookmarked';
+  const bmCount = (bookmarksAll[activeFileId] || []).length;
+  statsEl.innerHTML = '<strong>' + list.length + '</strong> of ' + rows.length + ' entries · <strong>' + bmCount + '</strong> bookmarked';
 }
 
-function fillSelect(sel, label, values, labelMap) {
+function renderBookmarksPage() {
+  const pairs = [];
+  const fids = Object.keys(files).sort(function (a, b) {
+    return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
+  });
+  fids.forEach(function (fid) {
+    const bms = bookmarksAll[fid] || [];
+    if (!bms.length) return;
+    normalizeRows(files[fid].raw).forEach(function (r) {
+      if (bms.indexOf(r.uid) !== -1) pairs.push({ row: r, fid: fid });
+    });
+  });
+  const order = { a: 0, b: 1, c: 2 };
+  pairs.sort(function (x, y) {
+    const px = order[String(x.row.priority || '').toLowerCase()];
+    const py = order[String(y.row.priority || '').toLowerCase()];
+    return ((px == null ? 9 : px) - (py == null ? 9 : py)) || String(x.row.name || '').localeCompare(String(y.row.name || ''));
+  });
+  bmListEl.innerHTML = pairs.map(function (p) { return cardHTML(p.row, p.fid, { showFile: true }); }).join('');
+  bmEmptyEl.hidden = pairs.length > 0;
+  $('#bm-count').innerHTML = '<strong>' + pairs.length + '</strong> bookmarked across all files';
+}
+
+function fillSelect(sel, label, values) {
   let html = '<option value="all">' + label + ' · All</option>';
   values.forEach(function (v) {
-    html += '<option value="' + esc(v) + '">' + esc((labelMap && labelMap[v]) || v) + '</option>';
+    html += '<option value="' + esc(v) + '">' + esc(v) + '</option>';
   });
   sel.innerHTML = html;
 }
@@ -504,20 +508,47 @@ function populateSelects() {
   const uniq = function (arr) { return Array.from(new Set(arr)).filter(Boolean).sort(); };
   fillSelect($('#f-area'), 'Research area', uniq(rows.reduce(function (acc, r) { return acc.concat(r.areas); }, [])));
   fillSelect($('#f-location'), 'Location', uniq(rows.map(function (r) { return r.location; })));
-  fillSelect($('#f-status'), 'Status', Object.keys(BUCKET_LABELS), BUCKET_LABELS);
+  let stHtml = '<option value="all">Status · All</option><option value="none">Not set</option>';
+  STATUS_VALUES.forEach(function (v) {
+    stHtml += '<option value="' + esc(v) + '">' + esc(STATUS_LABELS[v]) + '</option>';
+  });
+  $('#f-status').innerHTML = stHtml;
 }
 
 /* ==================== Views ==================== */
+function syncNav() {
+  const landing = !uploadView.hidden;
+  $('#btn-add').hidden = landing;
+  $('#btn-bookmarks').hidden = landing;
+  $('#btn-files').hidden = landing;
+}
+
+function showView(which) {
+  uploadView.hidden = which !== 'upload';
+  directoryView.hidden = which !== 'directory';
+  bookmarksView.hidden = which !== 'bookmarks';
+  syncNav();
+}
+
 function showDirectory() {
-  uploadView.hidden = true;
-  directoryView.hidden = false;
+  showView('directory');
   populateSelects();
   renderList();
 }
 
-function showUpload() {
-  directoryView.hidden = true;
-  uploadView.hidden = false;
+function showBookmarks() {
+  showView('bookmarks');
+  renderBookmarksPage();
+}
+
+function backFromBookmarks() {
+  if (activeFileId && files[activeFileId]) showDirectory();
+  else showView('upload');
+}
+
+function rerenderCurrent() {
+  if (!directoryView.hidden) renderList();
+  else if (!bookmarksView.hidden) renderBookmarksPage();
 }
 
 /* ==================== File operations ==================== */
@@ -563,7 +594,7 @@ function deleteFile(fid) {
   if (activeFileId === fid) {
     activeFileId = null;
     store.set(LS.active, null);
-    showUpload();
+    showView('upload');
   }
   toast('Deleted "' + name + '"');
 }
@@ -571,7 +602,7 @@ function deleteFile(fid) {
 /* ==================== File upload ==================== */
 function handleFile(file) {
   if (!/\.(xlsx|xls)$/i.test(file.name)) { toast('Please choose an .xlsx or .xls file', true); return; }
-  if (typeof XLSX === 'undefined') { toast('Excel library failed to load — check your internet connection.', true); return; }
+  if (typeof XLSX === 'undefined') { toast('Excel library failed to load. Check your internet connection.', true); return; }
   const reader = new FileReader();
   reader.onload = function (e) {
     try {
@@ -601,19 +632,16 @@ function handleFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-/* ==================== Panels ==================== */
-function openPanel(which) {
+/* ==================== File manager panel ==================== */
+function openPanel() {
   closePanels();
-  const p = which === 'files' ? $('#panel-files') : $('#panel-bookmarks');
-  if (which === 'files') renderFileList();
-  if (which === 'bookmarks') renderBookmarksPanel();
-  p.hidden = false;
+  renderFileList();
+  $('#panel-files').hidden = false;
   document.body.classList.add('no-scroll');
 }
 
 function closePanels() {
   $('#panel-files').hidden = true;
-  $('#panel-bookmarks').hidden = true;
   document.body.classList.remove('no-scroll');
 }
 
@@ -625,7 +653,7 @@ function renderFileList() {
   $('#files-empty').hidden = ids.length > 0;
   wrap.innerHTML = ids.map(function (fid) {
     const f = files[fid];
-    const when = f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '—';
+    const when = f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '-';
     return (
       '<div class="file-row' + (fid === activeFileId ? ' active-file' : '') + '" data-fid="' + esc(fid) + '">' +
         '<div class="file-icon">' + icon('file', 20) + '</div>' +
@@ -681,38 +709,6 @@ function confirmDeleteFile(fid) {
   });
 }
 
-function renderBookmarksPanel() {
-  const c = $('#bm-content');
-  let html = '';
-  const fids = Object.keys(files).sort(function (a, b) {
-    return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
-  });
-  let total = 0;
-  fids.forEach(function (fid) {
-    const bms = bookmarksAll[fid] || [];
-    if (!bms.length) return;
-    const frows = normalizeRows(files[fid].raw);
-    const marked = frows.filter(function (r) { return bms.indexOf(r.uid) !== -1; });
-    if (!marked.length) return;
-    total += marked.length;
-    html += '<div class="bm-group">' +
-      '<div class="bm-file">' + icon('file', 13) + ' ' + esc(files[fid].name) + '</div>' +
-      marked.map(function (r) {
-        return '<div class="bm-row" data-fid="' + esc(fid) + '" data-uid="' + esc(r.uid) + '">' +
-          '<div class="bm-info"><span class="bm-name">' + esc(r.name) + '</span>' +
-          '<span class="bm-inst">' + esc(r.institution || '') + '</span></div>' +
-          '<button class="mini-btn bm-on" data-action="unbm" title="Remove bookmark">' + starIcon(true, 16) + '</button>' +
-        '</div>';
-      }).join('') +
-    '</div>';
-  });
-  if (!total) {
-    html = '<div class="panel-empty">' + starIcon(false, 30) +
-      '<p>No bookmarks yet.</p><p class="sub">Tap the star on any entry to bookmark it.</p></div>';
-  }
-  c.innerHTML = html;
-}
-
 /* ==================== Confirm modal ==================== */
 let modalOnOk = null;
 
@@ -728,7 +724,7 @@ function showConfirm(opts) {
 function hideModal() {
   $('#modal').hidden = true;
   modalOnOk = null;
-  if ($('#panel-files').hidden && $('#panel-bookmarks').hidden) {
+  if ($('#panel-files').hidden) {
     document.body.classList.remove('no-scroll');
   }
 }
@@ -750,57 +746,72 @@ fileInput.addEventListener('change', function () {
   fileInput.value = '';
 });
 
-/* ==================== Events: directory ==================== */
-listEl.addEventListener('click', function (e) {
+/* ==================== Events: cards (directory + bookmarks page) ==================== */
+function onCardClick(e) {
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const card = actionEl.closest('.card');
   if (!card) return;
   const uid = card.dataset.uid;
+  const fid = card.dataset.fid;
   const action = actionEl.dataset.action;
+
+  if (action === 'status') return;
 
   if (action === 'toggle') {
     if (openIds.has(uid)) { openIds.delete(uid); card.classList.remove('open'); }
     else { openIds.add(uid); card.classList.add('open'); }
   } else if (action === 'bookmark') {
-    const arr = bookmarksAll[activeFileId] || (bookmarksAll[activeFileId] = []);
+    const arr = bookmarksAll[fid] || (bookmarksAll[fid] = []);
     const i = arr.indexOf(uid);
     if (i === -1) arr.push(uid); else arr.splice(i, 1);
     store.set(LS.bookmarks, bookmarksAll);
-    renderList();
+    rerenderCurrent();
   } else if (action === 'copy') {
     const ta = card.querySelector('.draft');
     if (ta) copyText(ta.value, actionEl);
+  } else if (action === 'openfile') {
+    openFile(fid, uid);
   }
-});
+}
 
-listEl.addEventListener('input', function (e) {
+function onCardInput(e) {
   const el = e.target;
   const card = el.closest('.card');
   if (!card) return;
   const uid = card.dataset.uid;
+  const fid = card.dataset.fid;
   if (el.classList.contains('notes')) {
-    if (!notesAll[activeFileId]) notesAll[activeFileId] = {};
-    notesAll[activeFileId][uid] = el.value;
+    if (!notesAll[fid]) notesAll[fid] = {};
+    notesAll[fid][uid] = el.value;
     store.set(LS.notes, notesAll);
   } else if (el.classList.contains('draft')) {
-    if (!draftsAll[activeFileId]) draftsAll[activeFileId] = {};
-    draftsAll[activeFileId][uid] = el.value;
+    if (!draftsAll[fid]) draftsAll[fid] = {};
+    draftsAll[fid][uid] = el.value;
     store.set(LS.drafts, draftsAll);
   }
-});
+}
 
-listEl.addEventListener('change', function (e) {
+function onCardChange(e) {
   const el = e.target;
   if (!el.classList.contains('status-select')) return;
-  const uid = el.dataset.uid || (el.closest('.card') && el.closest('.card').dataset.uid);
-  if (!uid) return;
-  if (!statusesAll[activeFileId]) statusesAll[activeFileId] = {};
-  statusesAll[activeFileId][uid] = el.value;
+  const card = el.closest('.card');
+  if (!card) return;
+  const uid = card.dataset.uid;
+  const fid = card.dataset.fid;
+  if (!statusesAll[fid]) statusesAll[fid] = {};
+  statusesAll[fid][uid] = el.value;
   store.set(LS.statuses, statusesAll);
-  renderList();
+  rerenderCurrent();
+}
+
+[listEl, bmListEl].forEach(function (el) {
+  el.addEventListener('click', onCardClick);
+  el.addEventListener('input', onCardInput);
+  el.addEventListener('change', onCardChange);
 });
 
+/* ==================== Events: filters ==================== */
 $('#f-search').addEventListener('input', function (e) { filters.q = e.target.value; renderList(); });
 
 const FILTER_MAP = { 'f-priority': 'priority', 'f-area': 'area', 'f-location': 'location', 'f-status': 'status', 'f-sort': 'sort' };
@@ -838,24 +849,31 @@ function resetFilters() {
 $('#f-reset').addEventListener('click', resetFilters);
 $('#btn-empty-reset').addEventListener('click', resetFilters);
 
-/* ==================== Events: topbar & panels ==================== */
-$('#btn-add').addEventListener('click', function () { closePanels(); showUpload(); });
+/* ==================== Events: topbar, panel, modal ==================== */
+$('#btn-add').addEventListener('click', function () { fileInput.click(); });
 
-$('#btn-clear').addEventListener('click', function () {
+$('#btn-bookmarks').addEventListener('click', function () {
+  if (!bookmarksView.hidden) { backFromBookmarks(); return; }
+  showBookmarks();
+});
+
+$('#btn-bm-back').addEventListener('click', backFromBookmarks);
+
+$('#btn-files').addEventListener('click', openPanel);
+
+$('#panel-add-file').addEventListener('click', function () { closePanels(); fileInput.click(); });
+
+$('#panel-clear-all').addEventListener('click', function () {
   showConfirm({
-    title: 'Clear all data?',
+    title: 'Delete all data?',
     message: 'All files, bookmarks, notes, statuses and drafts will be permanently removed from this browser.',
-    okLabel: 'Clear everything',
+    okLabel: 'Delete everything',
     onOk: function () {
       Object.values(LS).forEach(function (k) { store.remove(k); });
       location.reload();
     }
   });
 });
-
-$('#btn-bookmarks').addEventListener('click', function () { openPanel('bookmarks'); });
-$('#btn-files').addEventListener('click', function () { openPanel('files'); });
-$('#panel-add-file').addEventListener('click', function () { closePanels(); showUpload(); });
 
 document.querySelectorAll('[data-close-panel]').forEach(function (el) {
   el.addEventListener('click', closePanels);
@@ -875,26 +893,6 @@ $('#file-list').addEventListener('click', function (e) {
   openFile(fid);
 });
 
-$('#bm-content').addEventListener('click', function (e) {
-  const row = e.target.closest('.bm-row');
-  if (!row) return;
-  const fid = row.dataset.fid;
-  const uid = row.dataset.uid;
-  const btn = e.target.closest('[data-action="unbm"]');
-  if (btn) {
-    const arr = bookmarksAll[fid] || [];
-    const i = arr.indexOf(uid);
-    if (i !== -1) arr.splice(i, 1);
-    store.set(LS.bookmarks, bookmarksAll);
-    renderBookmarksPanel();
-    if (fid === activeFileId) renderList();
-    toast('Bookmark removed');
-    return;
-  }
-  closePanels();
-  openFile(fid, uid);
-});
-
 $('#modal-ok').addEventListener('click', function () {
   const cb = modalOnOk;
   hideModal();
@@ -909,12 +907,7 @@ document.addEventListener('keydown', function (e) {
   closePanels();
 });
 
-/* ==================== Resume & theme ==================== */
-$('#btn-resume').addEventListener('click', function () {
-  if (resumeFileId) openFile(resumeFileId);
-});
-$('#btn-all-files').addEventListener('click', function () { openPanel('files'); });
-
+/* ==================== Theme ==================== */
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   $('#theme-toggle').innerHTML = icon(t === 'dark' ? 'sun' : 'moon', 18);
@@ -939,10 +932,8 @@ $('#theme-toggle').addEventListener('click', function () {
         return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
       })[0];
     }
-    resumeFileId = rf;
-    const f = files[rf];
-    $('#resume-card').hidden = false;
-    const when = f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '—';
-    $('#resume-meta').textContent = f.name + ' · ' + (f.count || 0) + ' entries · ' + when;
+    openFile(rf);
+  } else {
+    showView('upload');
   }
 })();

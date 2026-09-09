@@ -1,40 +1,42 @@
-# EduTract — Professor Directory
+# EduTract · Professor Directory
 
 A fast, minimal, fully client-side web app to manage your academic application master lists.
 
-## ✨ What it does
+## Features
 
-- **Multi-file support** — upload as many Excel master lists as you like (.xlsx / .xls); every file keeps its own bookmarks, notes, statuses and email drafts
-- **File manager** (folder icon) — all your files in one place: open, rename inline, or delete with a confirmation dialog; shows entry count and last-accessed time
-- **Master bookmarks** (star icon) — bookmarked entries across **all** files, grouped by file; click one to jump straight to it
-- **Collapsible cards** for every professor / lab / project — click to expand all details and links
-- **Filters:** full-text search, priority, research area, location, contact status, bookmarked-only, and sorting
-- **Auto-generated email drafts** per entry — editable, one-click copy, and "open in mail app"
-- **Dark / light mode**, fully responsive, modern minimal SVG icons
+- Multi-file support: upload as many Excel master lists as you like (.xlsx / .xls). Every file keeps its own bookmarks, notes, statuses and email drafts
+- Auto-open: your last file opens automatically on refresh, no landing page detour
+- File manager (folder icon): open, rename inline, or delete files with a confirmation dialog. Shows entry count and last-accessed time. Delete-all lives here too
+- Bookmarks page (star icon): a unified page of all bookmarked entries across all files, with file badges and Open-in-file jump buttons
+- Collapsible cards: click any entry to expand all details and links
+- Filters: full-text search, priority, research area, location, status, bookmarked-only, and sorting
+- User-set status: each entry has a status chip dropdown you control (Not contacted, Emailed, Applied, Interview, No response, Rejected). No auto-assigned statuses
+- Email drafts: auto-generated per entry, editable, wrap responsively, one-click copy, open-in-mail-app
+- Dark / light mode, fully responsive, modern minimal SVG icons
 
-## 📊 Expected Excel format
+## Expected Excel format
 
 The app reads the first sheet whose name contains "Master" (or the first sheet). Recommended columns:
 
 `Priority | Name | Institution/lab | Role | Research fit | Hiring status | Email | Website | Profile/vacancy | Documents/route | Suggested angle | Status`
 
-Header matching is flexible — close variants work too. Research areas and locations are auto-detected and become filters.
+Header matching is flexible. Close variants work too. Research areas and locations are auto-detected and become filters.
 
-## 🚀 Run on GitHub Pages
+## Run on GitHub Pages
 
-1. Go to the repository → **Settings** → **Pages**
-2. Source: **Deploy from a branch**
-3. Branch: **main** / **(root)** → **Save**
-4. Your site will be live at: `https://shuvo-nix.github.io/edutract/`
+1. Repository, Settings, Pages
+2. Source: Deploy from a branch
+3. Branch: main / (root), Save
+4. Site URL: https://shuvo-nix.github.io/edutract/
 
-## 💻 Run locally
+## Run locally
 
-Just open `index.html` in any modern browser — no build step, no dependencies to install.
+Open index.html in any modern browser. No build step, no dependencies.
 
-## 🔒 Privacy
+## Privacy
 
-Everything runs 100% in your browser. Your files, bookmarks, notes, and drafts are stored only in your browser's `localStorage` and never leave your device.
+Everything runs 100% in your browser. Your files, bookmarks, notes, and drafts are stored only in localStorage and never leave your device.
 
-## 🛠 Tech
+## Tech
 
 Vanilla HTML / CSS / JS + SheetJS (CDN). No backend, no tracking, no cookies.
