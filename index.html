@@ -25,7 +25,7 @@
         <button id="btn-add" class="icon-btn" title="Add file" aria-label="Add file" hidden>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-        <button id="btn-bookmarks" class="icon-btn" title="Bookmarked entries (all files)" aria-label="Bookmarked entries" hidden>
+        <button id="btn-bookmarks" class="icon-btn" title="All Bookmarks" aria-label="All Bookmarks" hidden>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </button>
         <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
@@ -86,10 +86,13 @@
     </section>
 
     <div class="page-head" id="bm-page-head" hidden>
-      <h2>Bookmarked entries</h2>
-      <button id="btn-back-dir" class="icon-btn" title="Back to directory" aria-label="Back to directory">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-      </button>
+      <div class="page-head-left">
+        <button id="btn-back-dir" class="icon-btn" title="Back to directory" aria-label="Back to directory">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <h2>All Bookmarks</h2>
+      </div>
+      <span class="count-chip" id="bm-count-chip">0 of 0</span>
     </div>
 
     <div class="toolbar" id="toolbar" hidden>
@@ -99,12 +102,7 @@
         <input type="search" id="f-search" placeholder="Search name, institution, research…" autocomplete="off" />
       </div>
       <div class="filter-grid">
-        <select id="f-priority" class="select" aria-label="Priority">
-          <option value="all">Priority · All</option>
-          <option value="A">A only</option>
-          <option value="B">B only</option>
-          <option value="C">C only</option>
-        </select>
+        <select id="f-priority" class="select" aria-label="Priority"></select>
         <select id="f-area" class="select" aria-label="Research area"></select>
         <select id="f-location" class="select" aria-label="Location"></select>
         <select id="f-status" class="select" aria-label="Status"></select>
