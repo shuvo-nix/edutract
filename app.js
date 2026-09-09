@@ -86,6 +86,7 @@ const I = {
   mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   arrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>'
 };
 function icon(name, size) { return svgWrap(I[name], size || 18); }
@@ -665,6 +666,7 @@ function syncNav() {
   $('#btn-bookmarks').hidden = landing;
   $('#btn-files').hidden = landing;
   $('#btn-bookmarks').classList.toggle('active', !bookmarksView.hidden);
+  syncInstallBtn();
 }
 
 function showView(which) {
@@ -1177,10 +1179,50 @@ document.addEventListener('keydown', function (e) {
   closePanels();
 });
 
+/* ==================== PWA install ==================== */
+let deferredPrompt = null;
+
+function syncInstallBtn() {
+  const btn = $('#btn-install');
+  if (!btn) return;
+  btn.hidden = !(deferredPrompt && !uploadView.hidden);
+}
+
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  deferredPrompt = e;
+  syncInstallBtn();
+});
+
+window.addEventListener('appinstalled', function () {
+  deferredPrompt = null;
+  syncInstallBtn();
+  toast('EduTract installed');
+});
+
+$('#btn-install').addEventListener('click', function () {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function () {
+    deferredPrompt = null;
+    syncInstallBtn();
+  }).catch(function () {});
+});
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+
 /* ==================== Theme ==================== */
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   $('#theme-toggle').innerHTML = icon(t === 'dark' ? 'sun' : 'moon', 18);
+  const logo = $('#brand-logo');
+  if (logo) logo.src = t === 'dark' ? 'assets/edutract-dark.png' : 'assets/edutract-light.png';
+  const tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.setAttribute('content', t === 'dark' ? '#0e1013' : '#4f46e5');
 }
 $('#theme-toggle').addEventListener('click', function () {
   const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
