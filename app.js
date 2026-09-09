@@ -4,6 +4,7 @@
 const LS = {
   files: 'edutract:files',
   active: 'edutract:activeFile',
+  view: 'edutract:view',
   bookmarks: 'edutract:bookmarks',
   notes: 'edutract:notes',
   statuses: 'edutract:statuses',
@@ -144,6 +145,7 @@ const directoryView = $('#directory-view');
 const bookmarksView = $('#bookmarks-view');
 const toolbarEl = $('#toolbar');
 const bmPageHeadEl = $('#bm-page-head');
+const bmCountChip = $('#bm-count-chip');
 const resumeCard = $('#resume-card');
 const dropzone = $('#dropzone');
 const fileInput = $('#file-input');
@@ -517,33 +519,62 @@ function renderBookmarksPage() {
   if (expandAllState) filtered.forEach(function (e) { openIds.add(e.r.uid); });
   bmListEl.innerHTML = filtered.map(function (e) { return cardHTML(e.r, e.fid, { showFile: true }); }).join('');
   $('#bm-empty').hidden = filtered.length > 0;
-  statsEl.innerHTML = '<strong>' + filtered.length + '</strong> of ' + entries.length + ' bookmarked entries · all files';
+  bmCountChip.textContent = filtered.length + ' of ' + entries.length;
 }
 
-function fillSelect(sel, label, values, labelMap) {
-  let html = '<option value="all">' + label + ' · All</option>';
-  values.forEach(function (v) {
-    html += '<option value="' + esc(v) + '">' + esc((labelMap && labelMap[v]) || v) + '</option>';
-  });
-  sel.innerHTML = html;
+function currentViewEntries() {
+  if (!bookmarksView.hidden) {
+    const pairs = [];
+    Object.keys(files).forEach(function (fid) {
+      const bms = bookmarksAll[fid] || [];
+      if (!bms.length) return;
+      normalizeRows(files[fid].raw).forEach(function (r) {
+        if (bms.indexOf(r.uid) !== -1) pairs.push({ r: r, fid: fid });
+      });
+    });
+    return pairs;
+  }
+  return rows.map(function (r) { return { r: r, fid: activeFileId }; });
 }
 
 function populateSelects() {
-  let source = rows;
-  if (!bookmarksView.hidden) {
-    source = [];
-    Object.keys(files).forEach(function (fid) {
-      source = source.concat(normalizeRows(files[fid].raw));
-    });
-  }
-  const uniq = function (arr) { return Array.from(new Set(arr)).filter(Boolean).sort(); };
-  fillSelect($('#f-area'), 'Research area', uniq(source.reduce(function (acc, r) { return acc.concat(r.areas); }, [])));
-  fillSelect($('#f-location'), 'Location', uniq(source.map(function (r) { return r.location; })));
-  let stOpts = '<option value="all">Status · All</option>';
-  STATUS_VALUES.forEach(function (v) {
-    stOpts += '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+  const pairs = currentViewEntries();
+  const areas = [];
+  const locations = [];
+  const statuses = [];
+  const prios = [];
+  pairs.forEach(function (p) {
+    (p.r.areas || []).forEach(function (a) { if (areas.indexOf(a) === -1) areas.push(a); });
+    if (p.r.location && locations.indexOf(p.r.location) === -1) locations.push(p.r.location);
+    const st = statusOf(p.fid, p.r.uid) || 'Saved';
+    if (statuses.indexOf(st) === -1) statuses.push(st);
+    const pr = String(p.r.priority || '').toUpperCase();
+    if (pr && prios.indexOf(pr) === -1) prios.push(pr);
   });
-  $('#f-status').innerHTML = stOpts;
+  areas.sort();
+  locations.sort();
+  const prioOrder = ['A', 'B', 'C'];
+  prios.sort(function (a, b) { return prioOrder.indexOf(a) - prioOrder.indexOf(b); });
+  statuses.sort(function (a, b) { return STATUS_VALUES.indexOf(a) - STATUS_VALUES.indexOf(b); });
+
+  function fill(id, label, values, key) {
+    const sel = $('#' + id);
+    let html = '<option value="all">' + label + ' · All</option>';
+    values.forEach(function (v) {
+      html += '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    });
+    sel.innerHTML = html;
+    if (filters[key] !== 'all' && values.indexOf(filters[key]) === -1) {
+      filters[key] = 'all';
+      sel.value = 'all';
+    } else {
+      sel.value = filters[key];
+    }
+  }
+  fill('f-priority', 'Priority', prios, 'priority');
+  fill('f-area', 'Research area', areas, 'area');
+  fill('f-location', 'Location', locations, 'location');
+  fill('f-status', 'Status', statuses, 'status');
 }
 
 /* ==================== Views ==================== */
@@ -561,7 +592,9 @@ function showView(which) {
   bookmarksView.hidden = which !== 'bookmarks';
   toolbarEl.hidden = which === 'upload';
   bmPageHeadEl.hidden = which !== 'bookmarks';
+  statsEl.hidden = which === 'bookmarks';
   $('#f-bookmarked').hidden = which === 'bookmarks';
+  store.set(LS.view, which);
   syncNav();
 }
 
@@ -622,12 +655,20 @@ function openStatusMenu(btn, fid, uid) {
   const menu = document.createElement('div');
   menu.className = 'status-menu';
   menu.id = 'status-menu';
-  let html = '';
+  menu.dataset.uid = uid;
+  menu.dataset.fid = fid;
+  let html = '<div class="status-menu-top"><button type="button" class="status-menu-close" aria-label="Close menu">' + icon('x', 13) + '</button></div>';
+  html += '<div class="status-menu-items">';
   STATUS_VALUES.forEach(function (v) {
     html += '<button type="button" class="status-menu-item ' + (CHIP_CLASS[v] || '') + (v === current ? ' current' : '') + '" data-value="' + esc(v) + '">' + esc(v) + '</button>';
   });
+  html += '</div>';
   menu.innerHTML = html;
   document.body.appendChild(menu);
+  menu.querySelector('.status-menu-close').addEventListener('click', function (e) {
+    e.stopPropagation();
+    closeStatusMenu();
+  });
   const rect = btn.getBoundingClientRect();
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
@@ -851,7 +892,12 @@ function cardClickHandler(e) {
   const action = actionEl.dataset.action;
 
   if (action === 'statusmenu') {
-    openStatusMenu(actionEl, fid, uid);
+    const menu = document.getElementById('status-menu');
+    if (menu && menu.dataset.uid === uid && menu.dataset.fid === fid) {
+      closeStatusMenu();
+    } else {
+      openStatusMenu(actionEl, fid, uid);
+    }
     return;
   }
 
@@ -923,13 +969,10 @@ function resetFilters() {
   filters.q = ''; filters.priority = 'all'; filters.area = 'all';
   filters.location = 'all'; filters.status = 'all'; filters.bookmarked = false; filters.sort = 'priority';
   $('#f-search').value = '';
-  $('#f-priority').value = 'all';
-  $('#f-area').value = 'all';
-  $('#f-location').value = 'all';
-  $('#f-status').value = 'all';
   $('#f-sort').value = 'priority';
   $('#f-bookmarked').classList.remove('active');
   $('#f-bookmarked').setAttribute('aria-pressed', 'false');
+  populateSelects();
   rerenderCurrent();
 }
 $('#f-reset').addEventListener('click', resetFilters);
@@ -1035,6 +1078,7 @@ $('#theme-toggle').addEventListener('click', function () {
   applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
 
   const ids = Object.keys(files);
+  const savedView = store.get(LS.view, null);
   if (ids.length) {
     let rf = (activeFileId && files[activeFileId]) ? activeFileId : null;
     if (!rf) {
@@ -1042,9 +1086,13 @@ $('#theme-toggle').addEventListener('click', function () {
         return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
       })[0];
     }
-    openFile(rf);
+    if (savedView === 'upload') {
+      showUpload();
+    } else {
+      openFile(rf);
+      if (savedView === 'bookmarks') showBookmarks();
+    }
   } else {
-    showView('upload');
-    updateResumeCard();
+    showUpload();
   }
 })();
