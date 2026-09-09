@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EduTract — Professor Directory</title>
+  <meta name="description" content="Upload your Excel master list and browse professors, labs, and PhD openings with filters, bookmarks, and email drafts. All local, all private." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark">ET</div>
+        <div class="brand-text">
+          <span class="brand-name">EduTract</span>
+          <span class="brand-sub">Professor Directory</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
+        <button id="btn-upload-new" class="btn btn-ghost" hidden>↻ New file</button>
+        <button id="btn-clear" class="btn btn-danger" hidden>Clear data</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ Upload view ============ -->
+    <section id="upload-view">
+      <div class="hero">
+        <h1>Your academic master list,<br /><span class="grad">finally readable.</span></h1>
+        <p class="hero-sub">Drop in your Excel export and get a clean, filterable directory of professors, labs and openings — with email drafts, bookmarks and notes that stay saved in your browser.</p>
+      </div>
+
+      <div id="resume-card" class="resume-card" hidden>
+        <div class="resume-info">
+          <div class="resume-icon">📂</div>
+          <div>
+            <h3 id="resume-title">Saved session found</h3>
+            <p id="resume-meta"></p>
+          </div>
+        </div>
+        <div class="resume-actions">
+          <button id="btn-resume" class="btn btn-primary">Open directory</button>
+          <button id="btn-discard" class="btn btn-ghost">Discard</button>
+        </div>
+      </div>
+
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload Excel file">
+        <div class="dz-icon">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <p class="dz-title">Drop your Excel file here</p>
+        <p class="dz-sub">or <span class="dz-browse">browse files</span> · .xlsx / .xls</p>
+        <p class="dz-note">🔒 Everything stays on your device — nothing is uploaded to any server.</p>
+        <input type="file" id="file-input" accept=".xlsx,.xls" hidden />
+      </div>
+
+      <div class="features">
+        <div class="feature"><span class="f-icon">🔍</span><h4>Filter &amp; search</h4><p>By location, research area, priority, hiring status and more.</p></div>
+        <div class="feature"><span class="f-icon">✉️</span><h4>Email drafts</h4><p>Ready-to-copy drafts tailored to every professor.</p></div>
+        <div class="feature"><span class="f-icon">★</span><h4>Bookmarks &amp; notes</h4><p>Saved locally in your browser — resume anytime.</p></div>
+      </div>
+    </section>
+
+    <!-- ============ Directory view ============ -->
+    <section id="directory-view" hidden>
+      <div class="stats-row"><div id="stats" class="stats"></div></div>
+
+      <div class="toolbar" id="toolbar">
+        <div class="search-wrap">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="f-search" placeholder="Search name, institution, research…" autocomplete="off" />
+        </div>
+        <div class="filter-grid">
+          <select id="f-priority" class="select" aria-label="Priority">
+            <option value="all">Priority · All</option>
+            <option value="A">A only</option>
+            <option value="B">B only</option>
+            <option value="C">C only</option>
+          </select>
+          <select id="f-area" class="select" aria-label="Research area"></select>
+          <select id="f-location" class="select" aria-label="Location"></select>
+          <select id="f-status" class="select" aria-label="Contact status"></select>
+          <select id="f-sort" class="select" aria-label="Sort">
+            <option value="priority">Sort · Priority</option>
+            <option value="name">Sort · Name A–Z</option>
+            <option value="institution">Sort · Institution</option>
+          </select>
+          <button id="f-bookmarked" class="chip-toggle" aria-pressed="false">★ Bookmarked</button>
+          <button id="btn-expand-all" class="chip-toggle">Expand all</button>
+          <button id="f-reset" class="chip-toggle danger">Reset filters</button>
+        </div>
+      </div>
+
+      <div id="list" class="list"></div>
+      <div id="empty" class="empty" hidden>
+        <p class="empty-icon">🔎</p>
+        <p>No entries match your filters.</p>
+        <button class="btn btn-ghost" id="btn-empty-reset">Reset filters</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer"><p>EduTract · runs 100% in your browser · data stored locally</p></footer>
+
+  <div id="toast" class="toast" hidden>Copied!</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
