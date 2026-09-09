@@ -102,15 +102,11 @@
         <input type="search" id="f-search" placeholder="Search name, institution, research…" autocomplete="off" />
       </div>
       <div class="filter-grid">
-        <select id="f-priority" class="select" aria-label="Priority"></select>
-        <select id="f-area" class="select" aria-label="Research area"></select>
-        <select id="f-location" class="select" aria-label="Location"></select>
-        <select id="f-status" class="select" aria-label="Status"></select>
-        <select id="f-sort" class="select" aria-label="Sort">
-          <option value="priority">Sort · Priority</option>
-          <option value="name">Sort · Name A-Z</option>
-          <option value="institution">Sort · Institution</option>
-        </select>
+        <div class="dd" id="dd-priority"></div>
+        <div class="dd" id="dd-area"></div>
+        <div class="dd" id="dd-location"></div>
+        <div class="dd" id="dd-status"></div>
+        <div class="dd" id="dd-sort"></div>
         <button id="f-bookmarked" class="chip-toggle icon-only" aria-pressed="false" title="Bookmarked only">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </button>
