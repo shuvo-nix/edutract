@@ -17,7 +17,7 @@ const store = {
     catch (e) { return fallback; }
   },
   set(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage full */ }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
   },
   remove(key) { try { localStorage.removeItem(key); } catch (e) {} }
 };
@@ -26,7 +26,6 @@ function genId() {
   return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-/* -------- Migration from the single-file version -------- */
 function migrateOld() {
   if (localStorage.getItem(LS.files)) return;
   const rawStr = localStorage.getItem('edutract:data');
@@ -60,12 +59,12 @@ function migrateOld() {
     if (oldDr && typeof oldDr === 'object' && !Array.isArray(oldDr)) store.set(LS.drafts, { id: id, map: oldDr });
     store.remove('edutract:data');
     store.remove('edutract:meta');
-  } catch (e) { /* ignore corrupt old data */ }
+  } catch (e) {}
 }
 
 migrateOld();
 
-/* ==================== Icons (Lucide-style) ==================== */
+/* ==================== Icons ==================== */
 function svgWrap(inner, size, fill) {
   return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="' + (fill || 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
 }
@@ -75,12 +74,14 @@ const I = {
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
   pencil: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
-  check: '<polyline points="20 6 9 17 4 12"/>'
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  arrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>'
 };
 function icon(name, size) { return svgWrap(I[name], size || 18); }
 function starIcon(filled, size) {
@@ -101,9 +102,9 @@ let openIds = new Set();
 let expandAllState = false;
 const filters = { q: '', priority: 'all', area: 'all', location: 'all', status: 'all', bookmarked: false, sort: 'priority' };
 
-/* ==================== Status config (user-set only) ==================== */
+/* ==================== Status (user-set only) ==================== */
 const STATUS_VALUES = ['Not contacted', 'Emailed', 'Applied', 'Interview scheduled', 'No response', 'Rejected'];
-const STATUS_LABELS = {
+const CHIP_SHORT = {
   'Not contacted': 'Not contacted',
   'Emailed': 'Emailed',
   'Applied': 'Applied',
@@ -111,7 +112,7 @@ const STATUS_LABELS = {
   'No response': 'No response',
   'Rejected': 'Rejected'
 };
-const STATUS_CLASS = {
+const CHIP_CLASS = {
   '': 'st-notset',
   'Not contacted': 'st-other',
   'Emailed': 'st-emailed',
@@ -133,10 +134,9 @@ const fileInput = $('#file-input');
 const listEl = $('#list');
 const bmListEl = $('#bm-list');
 const emptyEl = $('#empty');
-const bmEmptyEl = $('#bm-empty');
 const statsEl = $('#stats');
 
-/* ==================== Column mapping (flexible) ==================== */
+/* ==================== Column mapping ==================== */
 const FIELD_DEFS = [
   ['priority',    /^priority$/i],
   ['name',        /^(name|professor|person|pi|lab|group)$/i],
@@ -199,7 +199,7 @@ const CITY_RULES = [
 /* ==================== Helpers ==================== */
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    return { '&': '&', '<': '<', '>': '>', '"': '"', "'": "'" }[c];
   });
 }
 
@@ -253,7 +253,7 @@ async function copyText(text, btn) {
       setTimeout(function () { btn.innerHTML = old; }, 1500);
     }
   } else {
-    toast('Copy failed. Please select the text and copy manually.', true);
+    toast('Copy failed. Please select the text manually.', true);
   }
 }
 
@@ -404,11 +404,11 @@ function fieldHTML(label, valueHTML) {
 function cardHTML(row, fid, opts) {
   opts = opts || {};
   const uid = row.uid;
-  const marked = (bookmarksAll[fid] || []).indexOf(uid) !== -1;
+  const marked = (bookmarksAll[fid] || []).indexOf(row.uid) !== -1;
   const ov = statusOf(fid, uid);
-  const draftsMapF = draftsAll[fid] || {};
-  const draft = draftsMapF[uid] != null ? draftsMapF[uid] : row.emailDraft;
-  const notesMapF = notesAll[fid] || {};
+  const df = draftsAll[fid] || {};
+  const draft = df[uid] != null ? df[uid] : row.emailDraft;
+  const nt = notesAll[fid] || {};
   const parts = splitDraft(draft);
   const mailAddr = firstEmailOf(row);
   const mailHref = mailAddr
@@ -417,7 +417,7 @@ function cardHTML(row, fid, opts) {
 
   let chipOpts = '<option value="">Status</option>';
   STATUS_VALUES.forEach(function (v) {
-    chipOpts += '<option value="' + esc(v) + '"' + (ov === v ? ' selected' : '') + '>' + esc(STATUS_LABELS[v]) + '</option>';
+    chipOpts += '<option value="' + esc(v) + '"' + (ov === v ? ' selected' : '') + '>' + esc(CHIP_SHORT[v]) + '</option>';
   });
 
   let fields = '';
@@ -441,7 +441,7 @@ function cardHTML(row, fid, opts) {
         '</div>' +
         '<div class="card-badges">' +
           (row.priority ? '<span class="badge prio-' + esc(String(row.priority).toLowerCase()) + '">' + esc(row.priority) + '</span>' : '') +
-          '<select class="status-select status-chip ' + STATUS_CLASS[ov] + '" data-action="status" data-uid="' + esc(uid) + '" title="Set contact status">' + chipOpts + '</select>' +
+          '<select class="status-select status-chip ' + (CHIP_CLASS[ov] || 'st-notset') + '" data-action="status" data-uid="' + esc(uid) + '" title="Set status" aria-label="Set status">' + chipOpts + '</select>' +
           (opts.showFile && files[fid] ? '<span class="badge file-badge" title="' + esc(files[fid].name) + '">' + esc(files[fid].name) + '</span>' : '') +
           '<span class="chevron" data-action="toggle">' + icon('chevron', 14) + '</span>' +
         '</div>' +
@@ -449,14 +449,14 @@ function cardHTML(row, fid, opts) {
       '<div class="card-details"><div class="card-inner"><div class="card-body">' +
         fields +
         '<div class="field"><div class="field-label">Notes <span class="muted">(saved locally)</span></div>' +
-          '<textarea class="notes" placeholder="Add your notes…">' + esc(notesMapF[uid] || '') + '</textarea>' +
+          '<textarea class="notes" placeholder="Add your notes">' + esc(nt[uid] || '') + '</textarea>' +
         '</div>' +
         '<div class="field"><div class="field-label">Email draft <span class="muted">(editable, edits are saved)</span></div>' +
           '<textarea class="draft" spellcheck="false">' + esc(draft) + '</textarea>' +
           '<div class="draft-actions">' +
             '<button class="btn btn-primary" data-action="copy">' + icon('copy', 15) + ' Copy draft</button>' +
             (mailHref ? '<a class="btn btn-ghost" href="' + esc(mailHref) + '">' + icon('mail', 15) + ' Open in mail app</a>' : '') +
-            (opts.showFile ? '<button class="btn btn-ghost" data-action="openfile">Open in file</button>' : '') +
+            (opts.showFile ? '<button class="btn btn-ghost" data-action="openfile">' + icon('arrowLeft', 15) + ' Open in file</button>' : '') +
           '</div>' +
         '</div>' +
       '</div></div></div>' +
@@ -469,37 +469,33 @@ function renderList() {
   if (expandAllState) list.forEach(function (r) { openIds.add(r.uid); });
   listEl.innerHTML = list.map(function (r) { return cardHTML(r, activeFileId); }).join('');
   emptyEl.hidden = list.length > 0;
-  const bmCount = (bookmarksAll[activeFileId] || []).length;
-  statsEl.innerHTML = '<strong>' + list.length + '</strong> of ' + rows.length + ' entries · <strong>' + bmCount + '</strong> bookmarked';
+  statsEl.innerHTML = '<strong>' + list.length + '</strong> of ' + rows.length + ' entries · <strong>' + (bookmarksAll[activeFileId] || []).length + '</strong> bookmarked';
 }
 
 function renderBookmarksPage() {
-  const pairs = [];
-  const fids = Object.keys(files).sort(function (a, b) {
-    return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
-  });
-  fids.forEach(function (fid) {
+  const entries = [];
+  Object.keys(files).forEach(function (fid) {
     const bms = bookmarksAll[fid] || [];
     if (!bms.length) return;
     normalizeRows(files[fid].raw).forEach(function (r) {
-      if (bms.indexOf(r.uid) !== -1) pairs.push({ row: r, fid: fid });
+      if (bms.indexOf(r.uid) !== -1) entries.push({ r: r, fid: fid });
     });
   });
   const order = { a: 0, b: 1, c: 2 };
-  pairs.sort(function (x, y) {
-    const px = order[String(x.row.priority || '').toLowerCase()];
-    const py = order[String(y.row.priority || '').toLowerCase()];
-    return ((px == null ? 9 : px) - (py == null ? 9 : py)) || String(x.row.name || '').localeCompare(String(y.row.name || ''));
+  entries.sort(function (x, y) {
+    const px = order[String(x.r.priority || '').toLowerCase()];
+    const py = order[String(y.r.priority || '').toLowerCase()];
+    return ((px == null ? 9 : px) - (py == null ? 9 : py)) || String(x.r.name || '').localeCompare(String(y.r.name || ''));
   });
-  bmListEl.innerHTML = pairs.map(function (p) { return cardHTML(p.row, p.fid, { showFile: true }); }).join('');
-  bmEmptyEl.hidden = pairs.length > 0;
-  $('#bm-count').innerHTML = '<strong>' + pairs.length + '</strong> bookmarked across all files';
+  bmListEl.innerHTML = entries.map(function (e) { return cardHTML(e.r, e.fid, { showFile: true }); }).join('');
+  $('#bm-empty').hidden = entries.length > 0;
+  $('#bm-count').innerHTML = '<strong>' + entries.length + '</strong> bookmarked entries across all files';
 }
 
-function fillSelect(sel, label, values) {
+function fillSelect(sel, label, values, labelMap) {
   let html = '<option value="all">' + label + ' · All</option>';
   values.forEach(function (v) {
-    html += '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    html += '<option value="' + esc(v) + '">' + esc((labelMap && labelMap[v]) || v) + '</option>';
   });
   sel.innerHTML = html;
 }
@@ -508,11 +504,11 @@ function populateSelects() {
   const uniq = function (arr) { return Array.from(new Set(arr)).filter(Boolean).sort(); };
   fillSelect($('#f-area'), 'Research area', uniq(rows.reduce(function (acc, r) { return acc.concat(r.areas); }, [])));
   fillSelect($('#f-location'), 'Location', uniq(rows.map(function (r) { return r.location; })));
-  let stHtml = '<option value="all">Status · All</option><option value="none">Not set</option>';
+  let stOpts = '<option value="all">Status · All</option><option value="none">Not set</option>';
   STATUS_VALUES.forEach(function (v) {
-    stHtml += '<option value="' + esc(v) + '">' + esc(STATUS_LABELS[v]) + '</option>';
+    stOpts += '<option value="' + esc(v) + '">' + esc(CHIP_SHORT[v]) + '</option>';
   });
-  $('#f-status').innerHTML = stHtml;
+  $('#f-status').innerHTML = stOpts;
 }
 
 /* ==================== Views ==================== */
@@ -521,6 +517,7 @@ function syncNav() {
   $('#btn-add').hidden = landing;
   $('#btn-bookmarks').hidden = landing;
   $('#btn-files').hidden = landing;
+  $('#btn-bookmarks').classList.toggle('active', !bookmarksView.hidden);
 }
 
 function showView(which) {
@@ -746,8 +743,8 @@ fileInput.addEventListener('change', function () {
   fileInput.value = '';
 });
 
-/* ==================== Events: cards (directory + bookmarks page) ==================== */
-function onCardClick(e) {
+/* ==================== Events: cards ==================== */
+function cardClickHandler(e) {
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const card = actionEl.closest('.card');
@@ -762,7 +759,8 @@ function onCardClick(e) {
     if (openIds.has(uid)) { openIds.delete(uid); card.classList.remove('open'); }
     else { openIds.add(uid); card.classList.add('open'); }
   } else if (action === 'bookmark') {
-    const arr = bookmarksAll[fid] || (bookmarksAll[fid] = []);
+    if (!bookmarksAll[fid]) bookmarksAll[fid] = [];
+    const arr = bookmarksAll[fid];
     const i = arr.indexOf(uid);
     if (i === -1) arr.push(uid); else arr.splice(i, 1);
     store.set(LS.bookmarks, bookmarksAll);
@@ -775,7 +773,7 @@ function onCardClick(e) {
   }
 }
 
-function onCardInput(e) {
+function cardInputHandler(e) {
   const el = e.target;
   const card = el.closest('.card');
   if (!card) return;
@@ -792,12 +790,12 @@ function onCardInput(e) {
   }
 }
 
-function onCardChange(e) {
+function cardChangeHandler(e) {
   const el = e.target;
   if (!el.classList.contains('status-select')) return;
   const card = el.closest('.card');
   if (!card) return;
-  const uid = card.dataset.uid;
+  const uid = el.dataset.uid || card.dataset.uid;
   const fid = card.dataset.fid;
   if (!statusesAll[fid]) statusesAll[fid] = {};
   statusesAll[fid][uid] = el.value;
@@ -806,9 +804,9 @@ function onCardChange(e) {
 }
 
 [listEl, bmListEl].forEach(function (el) {
-  el.addEventListener('click', onCardClick);
-  el.addEventListener('input', onCardInput);
-  el.addEventListener('change', onCardChange);
+  el.addEventListener('click', cardClickHandler);
+  el.addEventListener('input', cardInputHandler);
+  el.addEventListener('change', cardChangeHandler);
 });
 
 /* ==================== Events: filters ==================== */
@@ -849,18 +847,17 @@ function resetFilters() {
 $('#f-reset').addEventListener('click', resetFilters);
 $('#btn-empty-reset').addEventListener('click', resetFilters);
 
-/* ==================== Events: topbar, panel, modal ==================== */
-$('#btn-add').addEventListener('click', function () { fileInput.click(); });
+/* ==================== Events: topbar & panels ==================== */
+$('#btn-add').addEventListener('click', function () { closePanels(); fileInput.click(); });
 
 $('#btn-bookmarks').addEventListener('click', function () {
   if (!bookmarksView.hidden) { backFromBookmarks(); return; }
   showBookmarks();
 });
 
-$('#btn-bm-back').addEventListener('click', backFromBookmarks);
+$('#btn-back-dir').addEventListener('click', backFromBookmarks);
 
 $('#btn-files').addEventListener('click', openPanel);
-
 $('#panel-add-file').addEventListener('click', function () { closePanels(); fileInput.click(); });
 
 $('#panel-clear-all').addEventListener('click', function () {
