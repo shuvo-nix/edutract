@@ -199,7 +199,11 @@ const CITY_RULES = [
 /* ==================== Helpers ==================== */
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&', '<': '<', '>': '>', '"': '"', "'": "'" }[c];
+    if (c === '&') return '&' + 'amp;';
+    if (c === '<') return '&' + 'lt;';
+    if (c === '>') return '&' + 'gt;';
+    if (c === '"') return '&' + 'quot;';
+    return '&' + '#39;';
   });
 }
 
