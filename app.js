@@ -2,8 +2,8 @@
 
 /* ==================== Storage ==================== */
 const LS = {
-  data: 'edutract:data',
-  meta: 'edutract:meta',
+  files: 'edutract:files',
+  active: 'edutract:activeFile',
   bookmarks: 'edutract:bookmarks',
   notes: 'edutract:notes',
   statuses: 'edutract:statuses',
@@ -18,18 +18,97 @@ const store = {
   },
   set(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage full */ }
-  }
+  },
+  remove(key) { try { localStorage.removeItem(key); } catch (e) {} }
 };
 
+function genId() {
+  return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/* -------- Migration from the single-file version -------- */
+function migrateOld() {
+  if (localStorage.getItem(LS.files)) return;
+  const rawStr = localStorage.getItem('edutract:data');
+  if (!rawStr) return;
+  try {
+    const raw = JSON.parse(rawStr);
+    if (!Array.isArray(raw) || !raw.length) {
+      store.remove('edutract:data'); store.remove('edutract:meta');
+      return;
+    }
+    const meta = store.get('edutract:meta', {}) || {};
+    const id = genId();
+    const filesObj = {};
+    filesObj[id] = {
+      id: id,
+      name: meta.filename ? String(meta.filename).replace(/\.(xlsx|xls)$/i, '') : 'Master list',
+      raw: raw,
+      count: raw.length,
+      uploadedAt: meta.uploadedAt || Date.now(),
+      lastAccessed: Date.now()
+    };
+    store.set(LS.files, filesObj);
+    store.set(LS.active, id);
+    const oldBm = store.get('edutract:bookmarks', null);
+    if (Array.isArray(oldBm) && oldBm.length) store.set(LS.bookmarks, { id: id, arr: oldBm });
+    const oldNotes = store.get('edutract:notes', null);
+    if (oldNotes && typeof oldNotes === 'object' && !Array.isArray(oldNotes)) store.set(LS.notes, { id: id, map: oldNotes });
+    const oldSt = store.get('edutract:statuses', null);
+    if (oldSt && typeof oldSt === 'object' && !Array.isArray(oldSt)) store.set(LS.statuses, { id: id, map: oldSt });
+    const oldDr = store.get('edutract:drafts', null);
+    if (oldDr && typeof oldDr === 'object' && !Array.isArray(oldDr)) store.set(LS.drafts, { id: id, map: oldDr });
+    store.remove('edutract:data');
+    store.remove('edutract:meta');
+  } catch (e) { /* ignore corrupt old data */ }
+}
+
+migrateOld();
+
+/* ==================== Icons (Lucide-style) ==================== */
+function svgWrap(inner, size, fill) {
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="' + (fill || 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+}
+const I = {
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  pencil: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  chevron: '<polyline points="6 9 12 15 18 9"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>'
+};
+function icon(name, size) { return svgWrap(I[name], size || 18); }
+function starIcon(filled, size) {
+  return svgWrap(I.star, size || 18, filled ? 'currentColor' : 'none');
+}
+
 /* ==================== State ==================== */
+let files = store.get(LS.files, {}) || {};
+let activeFileId = store.get(LS.active, null);
+let bookmarksAll = store.get(LS.bookmarks, {}) || {};
+if (Array.isArray(bookmarksAll)) bookmarksAll = {};
+let notesAll = store.get(LS.notes, {}) || {};
+let statusesAll = store.get(LS.statuses, {}) || {};
+let draftsAll = store.get(LS.drafts, {}) || {};
+let resumeFileId = null;
+
 let rows = [];
-let bookmarks = new Set(store.get(LS.bookmarks, []));
-let notes = store.get(LS.notes, {});
-let overrides = store.get(LS.statuses, {});
-let drafts = store.get(LS.drafts, {});
 let openIds = new Set();
 let expandAllState = false;
 const filters = { q: '', priority: 'all', area: 'all', location: 'all', status: 'all', bookmarked: false, sort: 'priority' };
+
+function activeFile() { return files[activeFileId] || null; }
+function bmSet() { return new Set(bookmarksAll[activeFileId] || []); }
+function notesMap() { return notesAll[activeFileId] || {}; }
+function overridesMap() { return statusesAll[activeFileId] || {}; }
+function draftsMap() { return draftsAll[activeFileId] || {}; }
 
 /* ==================== DOM refs ==================== */
 const $ = (s) => document.querySelector(s);
@@ -148,6 +227,8 @@ function linkify(text, mailto) {
   }).join('');
 }
 
+function attrSel(v) { return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"'); }
+
 let toastTimer;
 function toast(msg, isError) {
   const t = $('#toast');
@@ -165,8 +246,7 @@ async function copyText(text, btn) {
     try {
       const ta = document.createElement('textarea');
       ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
       ok = document.execCommand('copy');
@@ -176,9 +256,9 @@ async function copyText(text, btn) {
   if (ok) {
     toast('Email draft copied!');
     if (btn) {
-      const old = btn.textContent;
-      btn.textContent = '✓ Copied';
-      setTimeout(function () { btn.textContent = old; }, 1500);
+      const old = btn.innerHTML;
+      btn.innerHTML = icon('check', 15) + ' Copied';
+      setTimeout(function () { btn.innerHTML = old; }, 1500);
     }
   } else {
     toast('Copy failed — please select the text manually.', true);
@@ -199,7 +279,7 @@ function detectLocation(row) {
 }
 
 function bucketOf(row) {
-  const ov = overrides[row.uid];
+  const ov = overridesMap()[row.uid];
   if (ov && OVERRIDE_BUCKET[ov]) return OVERRIDE_BUCKET[ov];
   const s = String(row.status || '');
   if (/applied/i.test(s)) return 'applied';
@@ -307,8 +387,9 @@ function normalizeRows(raw) {
 /* ==================== Filtering & sorting ==================== */
 function applyFilters() {
   const q = filters.q.trim().toLowerCase();
+  const bm = bmSet();
   const list = rows.filter(function (r) {
-    if (filters.bookmarked && !bookmarks.has(r.uid)) return false;
+    if (filters.bookmarked && !bm.has(r.uid)) return false;
     if (filters.priority !== 'all' && String(r.priority || '').toUpperCase() !== filters.priority) return false;
     if (filters.area !== 'all' && r.areas.indexOf(filters.area) === -1) return false;
     if (filters.location !== 'all' && r.location !== filters.location) return false;
@@ -343,10 +424,10 @@ function fieldHTML(label, valueHTML) {
 
 function cardHTML(row) {
   const uid = row.uid;
-  const marked = bookmarks.has(uid);
+  const marked = bmSet().has(uid);
   const bucket = bucketOf(row);
-  const ov = overrides[uid] || '';
-  const draft = drafts[uid] != null ? drafts[uid] : row.emailDraft;
+  const ov = overridesMap()[uid] || '';
+  const draft = draftsMap()[uid] != null ? draftsMap()[uid] : row.emailDraft;
   const parts = splitDraft(draft);
   const mailAddr = firstEmailOf(row);
   const mailHref = mailAddr
@@ -372,7 +453,7 @@ function cardHTML(row) {
   return (
     '<article class="card' + (openIds.has(uid) ? ' open' : '') + '" data-uid="' + esc(uid) + '">' +
       '<header class="card-head" data-action="toggle">' +
-        '<button class="star' + (marked ? ' marked' : '') + '" data-action="bookmark" title="Bookmark" aria-label="Bookmark">' + (marked ? '★' : '☆') + '</button>' +
+        '<button class="star' + (marked ? ' marked' : '') + '" data-action="bookmark" title="Bookmark" aria-label="Bookmark">' + starIcon(marked, 18) + '</button>' +
         '<div class="card-title">' +
           '<h3>' + esc(row.name || 'Untitled') + '</h3>' +
           '<p class="card-inst">' + esc(row.institution || '') + (row.location ? ' · <span class="loc">' + esc(row.location) + '</span>' : '') + '</p>' +
@@ -380,7 +461,7 @@ function cardHTML(row) {
         '<div class="card-badges">' +
           (row.priority ? '<span class="badge prio-' + esc(String(row.priority).toLowerCase()) + '">' + esc(row.priority) + '</span>' : '') +
           '<span class="badge st-' + bucket + '">' + esc(BUCKET_LABELS[bucket] || bucket) + '</span>' +
-          '<span class="chevron" data-action="toggle">▾</span>' +
+          '<span class="chevron" data-action="toggle">' + icon('chevron', 14) + '</span>' +
         '</div>' +
       '</header>' +
       '<div class="card-details"><div class="card-inner"><div class="card-body">' +
@@ -389,13 +470,13 @@ function cardHTML(row) {
           '<select class="status-select" data-uid="' + esc(uid) + '"><option value="">— from sheet —</option>' + statusOptions + '</select>' +
         '</div>' +
         '<div class="field"><div class="field-label">Notes <span class="muted">(saved locally)</span></div>' +
-          '<textarea class="notes" placeholder="Add your notes…">' + esc(notes[uid] || '') + '</textarea>' +
+          '<textarea class="notes" placeholder="Add your notes…">' + esc(notesMap()[uid] || '') + '</textarea>' +
         '</div>' +
         '<div class="field"><div class="field-label">Email draft <span class="muted">(editable — edits are saved)</span></div>' +
           '<textarea class="draft" spellcheck="false">' + esc(draft) + '</textarea>' +
           '<div class="draft-actions">' +
-            '<button class="btn btn-primary" data-action="copy">Copy draft</button>' +
-            (mailHref ? '<a class="btn btn-ghost" href="' + esc(mailHref) + '">Open in mail app</a>' : '') +
+            '<button class="btn btn-primary" data-action="copy">' + icon('copy', 15) + ' Copy draft</button>' +
+            (mailHref ? '<a class="btn btn-ghost" href="' + esc(mailHref) + '">' + icon('mail', 15) + ' Open in mail app</a>' : '') +
           '</div>' +
         '</div>' +
       '</div></div></div>' +
@@ -408,7 +489,7 @@ function renderList() {
   if (expandAllState) list.forEach(function (r) { openIds.add(r.uid); });
   listEl.innerHTML = list.map(cardHTML).join('');
   emptyEl.hidden = list.length > 0;
-  statsEl.innerHTML = '<strong>' + list.length + '</strong> of ' + rows.length + ' entries · <strong>' + bookmarks.size + '</strong> bookmarked';
+  statsEl.innerHTML = '<strong>' + list.length + '</strong> of ' + rows.length + ' entries · <strong>' + bmSet().size + '</strong> bookmarked';
 }
 
 function fillSelect(sel, label, values, labelMap) {
@@ -430,8 +511,6 @@ function populateSelects() {
 function showDirectory() {
   uploadView.hidden = true;
   directoryView.hidden = false;
-  $('#btn-upload-new').hidden = false;
-  $('#btn-clear').hidden = false;
   populateSelects();
   renderList();
 }
@@ -441,7 +520,55 @@ function showUpload() {
   uploadView.hidden = false;
 }
 
-/* ==================== File handling ==================== */
+/* ==================== File operations ==================== */
+function persistFiles() { store.set(LS.files, files); }
+function persistAll() {
+  store.set(LS.files, files);
+  store.set(LS.bookmarks, bookmarksAll);
+  store.set(LS.notes, notesAll);
+  store.set(LS.statuses, statusesAll);
+  store.set(LS.drafts, draftsAll);
+}
+
+function openFile(fid, focusUid) {
+  const f = files[fid];
+  if (!f) { toast('File not found.', true); return; }
+  activeFileId = fid;
+  f.lastAccessed = Date.now();
+  persistFiles();
+  store.set(LS.active, fid);
+  rows = normalizeRows(f.raw);
+  showDirectory();
+  if (focusUid) {
+    openIds.add(focusUid);
+    renderList();
+    requestAnimationFrame(function () {
+      const card = listEl.querySelector('.card[data-uid="' + attrSel(focusUid) + '"]');
+      if (card) {
+        card.classList.add('open');
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  }
+}
+
+function deleteFile(fid) {
+  const name = files[fid] ? files[fid].name : 'file';
+  delete files[fid];
+  delete bookmarksAll[fid];
+  delete notesAll[fid];
+  delete statusesAll[fid];
+  delete draftsAll[fid];
+  persistAll();
+  if (activeFileId === fid) {
+    activeFileId = null;
+    store.set(LS.active, null);
+    showUpload();
+  }
+  toast('Deleted "' + name + '"');
+}
+
+/* ==================== File upload ==================== */
 function handleFile(file) {
   if (!/\.(xlsx|xls)$/i.test(file.name)) { toast('Please choose an .xlsx or .xls file', true); return; }
   if (typeof XLSX === 'undefined') { toast('Excel library failed to load — check your internet connection.', true); return; }
@@ -451,12 +578,21 @@ function handleFile(file) {
       const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
       const sheetName = wb.SheetNames.find(function (n) { return /master/i.test(n); }) || wb.SheetNames[0];
       const raw = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-      rows = normalizeRows(raw);
-      if (!rows.length) throw new Error('No data rows found in sheet "' + sheetName + '".');
-      store.set(LS.data, raw);
-      store.set(LS.meta, { filename: file.name, uploadedAt: Date.now(), count: rows.length });
-      showDirectory();
-      toast('Loaded ' + rows.length + ' entries');
+      const parsed = normalizeRows(raw);
+      if (!parsed.length) throw new Error('No data rows found in sheet "' + sheetName + '".');
+      const fid = genId();
+      const now = Date.now();
+      files[fid] = {
+        id: fid,
+        name: file.name.replace(/\.(xlsx|xls)$/i, ''),
+        raw: raw,
+        count: parsed.length,
+        uploadedAt: now,
+        lastAccessed: now
+      };
+      persistFiles();
+      openFile(fid);
+      toast('Loaded ' + parsed.length + ' entries');
     } catch (err) {
       toast('Could not read file: ' + err.message, true);
     }
@@ -465,7 +601,139 @@ function handleFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-/* ==================== Events ==================== */
+/* ==================== Panels ==================== */
+function openPanel(which) {
+  closePanels();
+  const p = which === 'files' ? $('#panel-files') : $('#panel-bookmarks');
+  if (which === 'files') renderFileList();
+  if (which === 'bookmarks') renderBookmarksPanel();
+  p.hidden = false;
+  document.body.classList.add('no-scroll');
+}
+
+function closePanels() {
+  $('#panel-files').hidden = true;
+  $('#panel-bookmarks').hidden = true;
+  document.body.classList.remove('no-scroll');
+}
+
+function renderFileList() {
+  const wrap = $('#file-list');
+  const ids = Object.keys(files).sort(function (a, b) {
+    return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
+  });
+  $('#files-empty').hidden = ids.length > 0;
+  wrap.innerHTML = ids.map(function (fid) {
+    const f = files[fid];
+    const when = f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '—';
+    return (
+      '<div class="file-row' + (fid === activeFileId ? ' active-file' : '') + '" data-fid="' + esc(fid) + '">' +
+        '<div class="file-icon">' + icon('file', 20) + '</div>' +
+        '<div class="file-info">' +
+          '<span class="file-name">' + esc(f.name) + '</span>' +
+          '<span class="file-meta">' + (f.count || 0) + ' entries · ' + esc(when) + '</span>' +
+        '</div>' +
+        '<div class="file-actions">' +
+          '<button class="mini-btn" data-action="rename" title="Rename">' + icon('pencil', 15) + '</button>' +
+          '<button class="mini-btn danger" data-action="delete" title="Delete">' + icon('trash', 15) + '</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+function startRename(row, fid) {
+  const nameEl = row.querySelector('.file-name');
+  if (!nameEl || row.querySelector('.rename-input')) return;
+  const old = files[fid].name;
+  nameEl.outerHTML = '<input class="rename-input" value="' + esc(old) + '" aria-label="File name" />';
+  const input = row.querySelector('.rename-input');
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = function () {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (v && v !== old) {
+      files[fid].name = v;
+      persistFiles();
+      toast('Renamed to "' + v + '"');
+    }
+    renderFileList();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('click', function (ev) { ev.stopPropagation(); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') input.blur();
+    if (ev.key === 'Escape') { done = true; renderFileList(); }
+  });
+}
+
+function confirmDeleteFile(fid) {
+  const f = files[fid];
+  if (!f) return;
+  showConfirm({
+    title: 'Delete file?',
+    message: '"' + f.name + '" and its bookmarks, notes, statuses and drafts will be permanently removed.',
+    okLabel: 'Delete',
+    onOk: function () { deleteFile(fid); renderFileList(); }
+  });
+}
+
+function renderBookmarksPanel() {
+  const c = $('#bm-content');
+  let html = '';
+  const fids = Object.keys(files).sort(function (a, b) {
+    return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
+  });
+  let total = 0;
+  fids.forEach(function (fid) {
+    const bms = bookmarksAll[fid] || [];
+    if (!bms.length) return;
+    const frows = normalizeRows(files[fid].raw);
+    const marked = frows.filter(function (r) { return bms.indexOf(r.uid) !== -1; });
+    if (!marked.length) return;
+    total += marked.length;
+    html += '<div class="bm-group">' +
+      '<div class="bm-file">' + icon('file', 13) + ' ' + esc(files[fid].name) + '</div>' +
+      marked.map(function (r) {
+        return '<div class="bm-row" data-fid="' + esc(fid) + '" data-uid="' + esc(r.uid) + '">' +
+          '<div class="bm-info"><span class="bm-name">' + esc(r.name) + '</span>' +
+          '<span class="bm-inst">' + esc(r.institution || '') + '</span></div>' +
+          '<button class="mini-btn bm-on" data-action="unbm" title="Remove bookmark">' + starIcon(true, 16) + '</button>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  });
+  if (!total) {
+    html = '<div class="panel-empty">' + starIcon(false, 30) +
+      '<p>No bookmarks yet.</p><p class="sub">Tap the star on any entry to bookmark it.</p></div>';
+  }
+  c.innerHTML = html;
+}
+
+/* ==================== Confirm modal ==================== */
+let modalOnOk = null;
+
+function showConfirm(opts) {
+  $('#modal-title').textContent = opts.title;
+  $('#modal-message').textContent = opts.message;
+  $('#modal-ok').textContent = opts.okLabel || 'Confirm';
+  modalOnOk = opts.onOk;
+  $('#modal').hidden = false;
+  document.body.classList.add('no-scroll');
+}
+
+function hideModal() {
+  $('#modal').hidden = true;
+  modalOnOk = null;
+  if ($('#panel-files').hidden && $('#panel-bookmarks').hidden) {
+    document.body.classList.remove('no-scroll');
+  }
+}
+
+/* ==================== Events: upload ==================== */
 ['dragenter', 'dragover'].forEach(function (ev) {
   dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.add('drag'); });
 });
@@ -474,9 +742,15 @@ function handleFile(file) {
 });
 dropzone.addEventListener('drop', function (e) { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
 dropzone.addEventListener('click', function () { fileInput.click(); });
-dropzone.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
-fileInput.addEventListener('change', function () { if (fileInput.files[0]) handleFile(fileInput.files[0]); fileInput.value = ''; });
+dropzone.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+});
+fileInput.addEventListener('change', function () {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  fileInput.value = '';
+});
 
+/* ==================== Events: directory ==================== */
 listEl.addEventListener('click', function (e) {
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
@@ -489,8 +763,10 @@ listEl.addEventListener('click', function (e) {
     if (openIds.has(uid)) { openIds.delete(uid); card.classList.remove('open'); }
     else { openIds.add(uid); card.classList.add('open'); }
   } else if (action === 'bookmark') {
-    if (bookmarks.has(uid)) bookmarks.delete(uid); else bookmarks.add(uid);
-    store.set(LS.bookmarks, Array.from(bookmarks));
+    const arr = bookmarksAll[activeFileId] || (bookmarksAll[activeFileId] = []);
+    const i = arr.indexOf(uid);
+    if (i === -1) arr.push(uid); else arr.splice(i, 1);
+    store.set(LS.bookmarks, bookmarksAll);
     renderList();
   } else if (action === 'copy') {
     const ta = card.querySelector('.draft');
@@ -504,11 +780,13 @@ listEl.addEventListener('input', function (e) {
   if (!card) return;
   const uid = card.dataset.uid;
   if (el.classList.contains('notes')) {
-    notes[uid] = el.value;
-    store.set(LS.notes, notes);
+    if (!notesAll[activeFileId]) notesAll[activeFileId] = {};
+    notesAll[activeFileId][uid] = el.value;
+    store.set(LS.notes, notesAll);
   } else if (el.classList.contains('draft')) {
-    drafts[uid] = el.value;
-    store.set(LS.drafts, drafts);
+    if (!draftsAll[activeFileId]) draftsAll[activeFileId] = {};
+    draftsAll[activeFileId][uid] = el.value;
+    store.set(LS.drafts, draftsAll);
   }
 });
 
@@ -517,8 +795,9 @@ listEl.addEventListener('change', function (e) {
   if (!el.classList.contains('status-select')) return;
   const uid = el.dataset.uid || (el.closest('.card') && el.closest('.card').dataset.uid);
   if (!uid) return;
-  overrides[uid] = el.value;
-  store.set(LS.statuses, overrides);
+  if (!statusesAll[activeFileId]) statusesAll[activeFileId] = {};
+  statusesAll[activeFileId][uid] = el.value;
+  store.set(LS.statuses, statusesAll);
   renderList();
 });
 
@@ -559,36 +838,91 @@ function resetFilters() {
 $('#f-reset').addEventListener('click', resetFilters);
 $('#btn-empty-reset').addEventListener('click', resetFilters);
 
-$('#btn-upload-new').addEventListener('click', showUpload);
+/* ==================== Events: topbar & panels ==================== */
+$('#btn-add').addEventListener('click', function () { closePanels(); showUpload(); });
 
 $('#btn-clear').addEventListener('click', function () {
-  if (!confirm('Clear ALL saved data (upload, bookmarks, notes, statuses, drafts)?')) return;
-  [LS.data, LS.meta, LS.bookmarks, LS.notes, LS.statuses, LS.drafts].forEach(function (k) { localStorage.removeItem(k); });
-  location.reload();
+  showConfirm({
+    title: 'Clear all data?',
+    message: 'All files, bookmarks, notes, statuses and drafts will be permanently removed from this browser.',
+    okLabel: 'Clear everything',
+    onOk: function () {
+      Object.values(LS).forEach(function (k) { store.remove(k); });
+      location.reload();
+    }
+  });
 });
+
+$('#btn-bookmarks').addEventListener('click', function () { openPanel('bookmarks'); });
+$('#btn-files').addEventListener('click', function () { openPanel('files'); });
+$('#panel-add-file').addEventListener('click', function () { closePanels(); showUpload(); });
+
+document.querySelectorAll('[data-close-panel]').forEach(function (el) {
+  el.addEventListener('click', closePanels);
+});
+
+$('#file-list').addEventListener('click', function (e) {
+  const row = e.target.closest('.file-row');
+  if (!row) return;
+  const fid = row.dataset.fid;
+  const btn = e.target.closest('[data-action]');
+  if (btn) {
+    if (btn.dataset.action === 'rename') startRename(row, fid);
+    else if (btn.dataset.action === 'delete') confirmDeleteFile(fid);
+    return;
+  }
+  closePanels();
+  openFile(fid);
+});
+
+$('#bm-content').addEventListener('click', function (e) {
+  const row = e.target.closest('.bm-row');
+  if (!row) return;
+  const fid = row.dataset.fid;
+  const uid = row.dataset.uid;
+  const btn = e.target.closest('[data-action="unbm"]');
+  if (btn) {
+    const arr = bookmarksAll[fid] || [];
+    const i = arr.indexOf(uid);
+    if (i !== -1) arr.splice(i, 1);
+    store.set(LS.bookmarks, bookmarksAll);
+    renderBookmarksPanel();
+    if (fid === activeFileId) renderList();
+    toast('Bookmark removed');
+    return;
+  }
+  closePanels();
+  openFile(fid, uid);
+});
+
+$('#modal-ok').addEventListener('click', function () {
+  const cb = modalOnOk;
+  hideModal();
+  if (cb) cb();
+});
+$('#modal-cancel').addEventListener('click', hideModal);
+$('#modal .modal-backdrop').addEventListener('click', hideModal);
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  if (!$('#modal').hidden) { hideModal(); return; }
+  closePanels();
+});
+
+/* ==================== Resume & theme ==================== */
+$('#btn-resume').addEventListener('click', function () {
+  if (resumeFileId) openFile(resumeFileId);
+});
+$('#btn-all-files').addEventListener('click', function () { openPanel('files'); });
 
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
-  $('#theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
+  $('#theme-toggle').innerHTML = icon(t === 'dark' ? 'sun' : 'moon', 18);
 }
 $('#theme-toggle').addEventListener('click', function () {
   const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   applyTheme(t);
   store.set(LS.theme, t);
-});
-
-$('#btn-resume').addEventListener('click', function () {
-  const raw = store.get(LS.data, null);
-  if (!raw || !Array.isArray(raw) || !raw.length) { toast('No saved data found.', true); return; }
-  rows = normalizeRows(raw);
-  showDirectory();
-});
-
-$('#btn-discard').addEventListener('click', function () {
-  localStorage.removeItem(LS.data);
-  localStorage.removeItem(LS.meta);
-  $('#resume-card').hidden = true;
-  toast('Saved upload discarded');
 });
 
 /* ==================== Init ==================== */
@@ -597,11 +931,18 @@ $('#btn-discard').addEventListener('click', function () {
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
 
-  const raw = store.get(LS.data, null);
-  const meta = store.get(LS.meta, null);
-  if (raw && Array.isArray(raw) && raw.length && meta) {
+  const ids = Object.keys(files);
+  if (ids.length) {
+    let rf = (activeFileId && files[activeFileId]) ? activeFileId : null;
+    if (!rf) {
+      rf = ids.slice().sort(function (a, b) {
+        return (files[b].lastAccessed || 0) - (files[a].lastAccessed || 0);
+      })[0];
+    }
+    resumeFileId = rf;
+    const f = files[rf];
     $('#resume-card').hidden = false;
-    const when = meta.uploadedAt ? new Date(meta.uploadedAt).toLocaleString() : 'unknown date';
-    $('#resume-meta').textContent = (meta.filename || 'Excel file') + ' · ' + (meta.count || raw.length) + ' entries · ' + when;
+    const when = f.lastAccessed ? new Date(f.lastAccessed).toLocaleString() : '—';
+    $('#resume-meta').textContent = f.name + ' · ' + (f.count || 0) + ' entries · ' + when;
   }
 })();
