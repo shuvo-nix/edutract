@@ -1,4 +1,4 @@
-# EduTract — Professor Directory
+# EduTract - Professor Directory
 
 A fast, minimal, fully client-side web app to browse your academic application master list.
 
@@ -20,12 +20,6 @@ The app reads the first sheet whose name contains "Master" (or the first sheet).
 
 Header matching is flexible — close variants work too. Research areas and locations are auto-detected and become filters.
 
-## 🚀 Run on GitHub Pages
-
-1. Go to the repository → **Settings** → **Pages**
-2. Source: **Deploy from a branch**
-3. Branch: **main** / **(root)** → **Save**
-4. Your site will be live at: `https://shuvo-nix.github.io/edutract/`
 
 ## 💻 Run locally
 
