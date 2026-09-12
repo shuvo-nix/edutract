@@ -99,22 +99,25 @@ function surnameOf(name) {
    location phrase, postal address anywhere in the row, city after comma
    in the institution field, unambiguous institution-name patterns, known
    university URL slugs, otherwise unresolved. Never the first word of an
-   institution; multi-word candidates must be known cities, and single
-   words must pass the word-level non-city check. Nothing is guessed. */
+   institution. Multi-word candidates must be known cities; single-word
+   candidates must be properly formed city words (one capital letter
+   followed by lowercase letters). Nothing is guessed. */
 const CITY_NORMALIZE = { 'München': 'Munich', 'Muenchen': 'Munich', 'Köln': 'Cologne', 'Koln': 'Cologne', 'Nürnberg': 'Nuremberg', 'Nuernberg': 'Nuremberg' };
-const NON_CITY_WORDS = new Set(['germany', 'deutschland', 'austria', 'österreich', 'switzerland', 'schweiz', 'europe', 'europa', 'european', 'worldwide', 'remote', 'online', 'university', 'universität', 'universitaet', 'univ', 'institute', 'institut', 'college', 'school', 'department', 'chair', 'lab', 'laboratory', 'group', 'center', 'centre', 'campus', 'faculty', 'professor', 'prof', 'gmbh', 'saarland', 'bavaria', 'bayern', 'hessen', 'thuringia', 'thüringen', 'brandenburg', 'saxony', 'sachsen', 'niedersachsen', 'baden-württemberg', 'nordrhein-westfalen', 'nrw', 'tu', 'hochschule', 'kit', 'eth', 'applied', 'sciences', 'science', 'technology', 'technologies', 'studies', 'research', 'international', 'academy', 'hospital', 'clinic', 'library', 'museum', 'foundation', 'association', 'society', 'human', 'computer', 'interaction', 'artificial', 'intelligence', 'security', 'cybersecurity', 'privacy', 'information', 'media', 'knowledge', 'data', 'learning', 'systems', 'system', 'max', 'planck', 'helmholtz', 'fraunhofer', 'leibniz', 'weizenbaum', 'computing', 'responsible', 'mobile', 'users', 'user', 'intelligent', 'informatics', 'informatik', 'software', 'digital', 'quantum', 'vision', 'visual', 'analytics', 'robotic', 'autonomous', 'trusted', 'sustainable', 'smart', 'cyber', 'future', 'engineering', 'neural', 'language', 'speech', 'text', 'image', 'speech']);
+const NON_CITY_WORDS = new Set(['germany', 'deutschland', 'austria', 'österreich', 'switzerland', 'schweiz', 'europe', 'europa', 'european', 'worldwide', 'remote', 'online', 'university', 'universität', 'universitaet', 'univ', 'institute', 'institut', 'college', 'school', 'department', 'chair', 'lab', 'laboratory', 'group', 'center', 'centre', 'campus', 'faculty', 'professor', 'prof', 'gmbh', 'saarland', 'bavaria', 'bayern', 'hessen', 'thuringia', 'thüringen', 'brandenburg', 'saxony', 'sachsen', 'niedersachsen', 'baden-württemberg', 'nordrhein-westfalen', 'nrw', 'tu', 'hochschule', 'kit', 'eth', 'applied', 'sciences', 'science', 'technology', 'technologies', 'studies', 'research', 'international', 'academy', 'hospital', 'clinic', 'library', 'museum', 'foundation', 'association', 'society', 'human', 'computer', 'interaction', 'artificial', 'intelligence', 'security', 'cybersecurity', 'privacy', 'information', 'media', 'knowledge', 'data', 'learning', 'systems', 'system', 'max', 'planck', 'helmholtz', 'fraunhofer', 'leibniz', 'weizenbaum', 'computing', 'responsible', 'mobile', 'users', 'user', 'intelligent', 'informatics', 'informatik', 'software', 'digital', 'quantum', 'vision', 'visual', 'analytics', 'robotic', 'autonomous', 'trusted', 'sustainable', 'smart', 'cyber', 'future', 'engineering', 'neural', 'language', 'speech', 'text', 'image']);
 const KNOWN_CITIES = new Set(['aachen', 'augsburg', 'bamberg', 'bayreuth', 'berlin', 'bielefeld', 'bochum', 'bonn', 'braunschweig', 'bremen', 'chemnitz', 'clausthal-zellerfeld', 'cologne', 'cottbus', 'darmstadt', 'dortmund', 'dresden', 'duisburg', 'duisburg-essen', 'düsseldorf', 'erlangen', 'essen', 'flensburg', 'frankfurt', 'frankfurt am main', 'frankfurt an der oder', 'freiberg', 'freiburg', 'fulda', 'garching', 'giessen', 'göttingen', 'greifswald', 'hagen', 'halle', 'hamburg', 'hamm', 'hanover', 'heidelberg', 'heide', 'heilbronn', 'hildesheim', 'ilmenau', 'ingolstadt', 'jena', 'kaiserslautern', 'karlsruhe', 'kassel', 'kiel', 'koblenz', 'köln', 'konstanz', 'krefeld', 'leipzig', 'lindau', 'ludwigshafen', 'lübeck', 'lüneburg', 'magdeburg', 'mainz', 'mannheim', 'marburg', 'mittweida', 'munich', 'münchen', 'münster', 'nuremberg', 'nürnberg', 'oldenburg', 'osnabrück', 'paderborn', 'passau', 'potsdam', 'regensburg', 'renningen', 'rostock', 'saarbrücken', 'schwerin', 'siegen', 'sankt augustin', 'stuttgart', 'trier', 'tübingen', 'ulm', 'villingen-schwenningen', 'weimar', 'wiesbaden', 'witten', 'wolfsburg', 'wuppertal', 'würzburg', 'zwickau', 'bad homburg', 'baden-baden', 'bad hersfeld', 'bad salzuflen', 'herford', 'pforzheim', 'recklinghausen']);
-const CITY_WORD_RE = /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*$/;
 const POSTAL_CITY_RE = /[0-9]{5}\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/;
 
 function isCityLike(s) {
   const t = String(s || '').trim();
   if (t.length < 3 || t.length > 40) return false;
   if (/[0-9]/.test(t)) return false;
-  if (!CITY_WORD_RE.test(t)) return false;
   const words = t.toLowerCase().split(/[\s-]+/);
   if (words.some((w) => NON_CITY_WORDS.has(w))) return false;
-  if (words.length > 1 && !KNOWN_CITIES.has(t.toLowerCase())) return false;
+  if (words.length > 1) {
+    if (!KNOWN_CITIES.has(t.toLowerCase())) return false;
+  } else {
+    if (!/^[A-ZÄÖÜ][a-zäöüß]+$/.test(t)) return false;
+  }
   return true;
 }
 
@@ -166,7 +169,7 @@ function cleanCity(v) {
 }
 
 function cityFromPhrase(text) {
-  const m = String(text || '').match(/(?:located|based|situated|working)\s+in\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/);
+  const m = String(text || '').match(/(?:located|based|situated|working)\s+in\s+([A-ZÄÖÜ][a-zäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/);
   return m && isCityLike(m[1]) ? normalizeCityName(m[1]) : '';
 }
 
