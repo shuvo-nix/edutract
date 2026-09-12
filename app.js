@@ -41,99 +41,57 @@ const normPriority = (v) => {
 };
 const CITY_RE = /(city|country|region|state|town|address|place|province|campus|location|continent|based)/i;
 const CATEGORY_RE = /(categor|field|domain|disciplin|theme|track|broad|specializ)/i;
+const DOMAIN_COL_RE = /(domain|categor)/i;
 
-/* ---------- research area grouping ----------
-   Broad groups for the filter are derived by clustering the specific
-   areas: recurring keywords or phrases (appearing in 2+ areas) become
-   groups, synonyms are merged (HCI / Human-Centered / Human Factors),
-   and each area joins its smallest matching group so that, for example,
-   'AI in cybersecurity' lands under Cybersecurity while 'AI in health'
-   lands under AI. */
-const AREA_STOPWORDS = new Set(['in', 'of', 'for', 'and', 'the', 'a', 'an', 'with', 'on', 'to', 'at', 'by', 'from', 'using', 'based', 'research', 'studies', 'study', 'applications', 'methods', 'approaches']);
-const AREA_PHRASE_MAP = [
-  [/human[- ]computer interaction/g, 'human centered'],
-  [/\bhci\b/g, 'human centered'],
-  [/human[- ]centered/g, 'human centered'],
-  [/human[- ]centred/g, 'human centered'],
-  [/human factors/g, 'human centered'],
-  [/artificial intelligence/g, 'ai'],
-  [/\bml\b/g, 'machine learning'],
-  [/natural language processing/g, 'nlp'],
-  [/\biot\b|internet of things/g, 'iot'],
-  [/cyber\s*security/g, 'cybersecurity']
+/* ---------- research domain classification ----------
+   If the sheet has a dedicated domain/category column it is used as-is.
+   Otherwise every row is classified into exactly one of the ten
+   controlled domains using keyword rules; ties are broken by the
+   priority order, and Applied AI is the catch-all. */
+const RESEARCH_DOMAINS = [
+  { label: 'Education/Learning', keywords: ['learning analytics', 'digital education', 'adaptive learning', 'educational technology', 'ai supported teaching', 'ai assisted teaching', 'educational chatbot', 'educational chatbots', 'self regulated learning', 'learning systems', 'elearning', 'education', 'learning', 'teaching', 'tutoring', 'edtech'] },
+  { label: 'Security/Privacy', keywords: ['usable security', 'privacy', 'authentication', 'human centered cybersecurity', 'cybersecurity', 'security behaviour', 'security behavior', 'security'] },
+  { label: 'Trustworthy AI', keywords: ['trust calibration', 'explainable ai', 'responsible ai', 'ai safety', 'algorithmic fairness', 'fairness', 'transparency', 'accountability', 'governance', 'trustworthy ai', 'trustworthy', 'xai'] },
+  { label: 'Robotics/HRI', keywords: ['human robot interaction', 'autonomous systems', 'autonomous intelligent systems', 'intelligent robots', 'robot interfaces', 'embodied agents', 'robotics', 'robots', 'robot', 'hri'] },
+  { label: 'NLP/LLMs', keywords: ['natural language processing', 'language technologies', 'dialogue systems', 'conversational ai', 'large language models', 'language agents', 'llm evaluation', 'language models', 'nlp', 'llms', 'llm', 'chatbots'] },
+  { label: 'XR/Multimodal', keywords: ['virtual reality', 'augmented reality', 'mixed reality', 'immersive systems', 'multimodal interaction', 'haptics', 'multimodal', 'immersive', 'vr', 'ar', 'xr'] },
+  { label: 'Human Factors', keywords: ['engineering psychology', 'cognitive ergonomics', 'human factors', 'driver interaction', 'automotive ux', 'safety critical interaction', 'human technology cooperation', 'automotive', 'mobility', 'workload', 'driving'] },
+  { label: 'Human-AI', keywords: ['human ai interaction', 'human centered ai', 'ai assisted work', 'ai collaboration', 'user agency', 'adaptive ai interfaces', 'human in the loop', 'human ai', 'ai assistance'] },
+  { label: 'HCI/UX', keywords: ['user experience', 'interaction design', 'social computing', 'user research', 'interactive systems', 'user studies', 'user centered design', 'usability', 'cscw', 'hci', 'ux'] },
+  { label: 'Applied AI', keywords: ['industrial ai', 'biomedical ai', 'ai for science', 'manufacturing ai', 'applied ai', 'machine learning', 'deep learning', 'computer vision', 'data science', 'ai'] }
 ];
-const SINGLE_DENY = new Set(['learning', 'intelligence', 'computing', 'engineering', 'technology', 'systems', 'sciences', 'analysis', 'processing', 'modeling', 'modelling', 'networks', 'interaction']);
-const AREA_ACRONYMS = { ai: 'AI', nlp: 'NLP', iot: 'IoT', ml: 'ML', xr: 'XR', ar: 'AR', vr: 'VR', cv: 'CV' };
+const DOMAIN_PRIORITY = ['Education/Learning', 'Security/Privacy', 'Trustworthy AI', 'Robotics/HRI', 'NLP/LLMs', 'XR/Multimodal', 'Human Factors', 'Human-AI', 'HCI/UX', 'Applied AI'];
 
-function normalizeAreaString(s) {
-  let t = String(s || '').toLowerCase().replace(/[-_/]/g, ' ').replace(/\s+/g, ' ').trim();
-  AREA_PHRASE_MAP.forEach((pair) => { t = t.replace(pair[0], pair[1]); });
-  return t;
-}
-
-function areaLabel(phrase) {
-  if (phrase === 'human centered') return 'Human-Centered';
-  return phrase.split(' ').map((w) => AREA_ACRONYMS[w] || (w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
-}
-
-function deriveAreaGroups(rows) {
-  const counts = new Map();
-  rows.forEach((r) => rowAreas(r).forEach((a) => {
-    const t = String(a || '').trim();
-    if (t) counts.set(t, (counts.get(t) || 0) + 1);
-  }));
-  const distinct = Array.from(counts.keys());
-  const assign = new Map();
-  const groupCount = new Map();
-  const groups = [];
-  if (distinct.length < 2) return { assign, groups, groupCount };
-  const seqs = new Map();
-  distinct.forEach((area) => {
-    seqs.set(area, normalizeAreaString(area).split(/[^a-z0-9]+/).filter((w) => w && !AREA_STOPWORDS.has(w)));
-  });
-  const cand = new Map();
-  distinct.forEach((area) => {
-    const words = seqs.get(area);
-    for (let n = 1; n <= 3; n++) {
-      for (let i = 0; i + n <= words.length; i++) {
-        const p = words.slice(i, i + n).join(' ');
-        if (!cand.has(p)) cand.set(p, new Set());
-        cand.get(p).add(area);
-      }
+function classifyDomain(text) {
+  const t = ' ' + String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+  let best = 'Applied AI';
+  let bestScore = 0;
+  let bestPrio = DOMAIN_PRIORITY.length - 1;
+  RESEARCH_DOMAINS.forEach((d) => {
+    let score = 0;
+    d.keywords.forEach((k) => { if (t.indexOf(' ' + k + ' ') >= 0) score += k.length; });
+    const prio = DOMAIN_PRIORITY.indexOf(d.label);
+    if (score > bestScore || (score === bestScore && score > 0 && prio < bestPrio)) {
+      bestScore = score;
+      best = d.label;
+      bestPrio = prio;
     }
   });
-  const keys = [];
-  cand.forEach((set, p) => {
-    if (set.size < 2) return;
-    const ws = p.split(' ');
-    if (ws.length === 1 && SINGLE_DENY.has(p)) return;
-    keys.push({ phrase: p, size: set.size, len: ws.length, set: set });
-  });
-  const keysFiltered = keys.filter((k) => !keys.some((o) =>
-    o !== k && o.len > k.len && (' ' + o.phrase + ' ').indexOf(' ' + k.phrase + ' ') >= 0 &&
-    Array.from(k.set).every((a) => o.set.has(a))
-  ));
-  distinct.forEach((area) => {
-    const words = seqs.get(area);
-    let best = null;
-    keysFiltered.forEach((k) => {
-      const kw = k.phrase.split(' ');
-      let matched = false;
-      for (let i = 0; i + kw.length <= words.length; i++) {
-        let ok = true;
-        for (let j = 0; j < kw.length; j++) { if (words[i + j] !== kw[j]) { ok = false; break; } }
-        if (ok) { matched = true; break; }
-      }
-      if (!matched) return;
-      if (!best || k.size < best.size || (k.size === best.size && k.len > best.len)) best = k;
-    });
-    const g = best ? areaLabel(best.phrase) : 'Other';
-    assign.set(area, g);
-    groupCount.set(g, (groupCount.get(g) || 0) + counts.get(area));
-  });
-  Array.from(groupCount.keys()).filter((g) => g !== 'Other').sort((a, b) => a.localeCompare(b)).forEach((g) => groups.push(g));
-  if (groupCount.has('Other')) groups.push('Other');
-  return { assign, groups, groupCount };
+  return best;
+}
+
+function rowDomain(r) {
+  if (r.category) return r.category;
+  const extraText = (r.extras || []).map((e) => e.value).join(' ');
+  return classifyDomain([r.area, r.subject, extraText].join(' '));
+}
+
+function surnameOf(name) {
+  let t = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!t) return '';
+  t = t.replace(/^(univ\.\s*)?prof(\.|essor)?\s+/i, '').replace(/^dr\.?\s+/i, '').replace(/^ph\.?d\.?\s+/i, '');
+  const parts = t.split(' ').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
 }
 
 /* ---------- location inference ----------
@@ -184,6 +142,7 @@ function resolveLocation(r) {
 }
 
 /* ---------- Excel column mapping ----------
+   Dedicated domain/category columns are reserved first and used as-is.
    Known fields are matched by header name (flexible, preferring columns
    that actually contain data), everything else is displayed as an extra
    field so no column is ever hidden. */
@@ -201,14 +160,15 @@ const FIELD_DEFS = [
 ];
 const LINK_HINTS = ['link', 'links', 'website', 'url', 'homepage', 'webpage', 'site', 'page', 'scholar', 'profile', 'lab', 'job', 'posting', 'vacancy', 'opening'];
 
-function mapColumns(headers, hasValue) {
+function mapColumns(headers, hasValue, reserved) {
+  const skip = reserved || new Set();
   const nh = headers.map(normHeader);
   const col = {};
   const used = new Set();
   FIELD_DEFS.forEach((def) => {
     let fallback = -1;
     for (let i = 0; i < nh.length; i++) {
-      if (used.has(i) || !nh[i]) continue;
+      if (skip.has(i) || used.has(i) || !nh[i]) continue;
       if (def.exact.indexOf(nh[i]) >= 0) {
         if (hasValue[i]) { col[def.key] = i; used.add(i); return; }
         if (fallback < 0) fallback = i;
@@ -221,7 +181,7 @@ function mapColumns(headers, hasValue) {
     let best = -1;
     let bestEmpty = -1;
     for (let i = 0; i < nh.length; i++) {
-      if (used.has(i) || !nh[i]) continue;
+      if (skip.has(i) || used.has(i) || !nh[i]) continue;
       if (def.contains.some((p) => nh[i].indexOf(p) >= 0)) {
         if (hasValue[i]) {
           if (best < 0 || nh[i].length < nh[best].length) best = i;
@@ -233,7 +193,7 @@ function mapColumns(headers, hasValue) {
   });
   const links = [];
   for (let i = 0; i < nh.length; i++) {
-    if (used.has(i) || !nh[i]) continue;
+    if (skip.has(i) || used.has(i) || !nh[i]) continue;
     if (LINK_HINTS.some((p) => nh[i].indexOf(p) >= 0)) { links.push(i); used.add(i); }
   }
   return { col, links, used };
@@ -252,7 +212,14 @@ function parseWorkbook(buf) {
   const headers = grid[hi].map((h) => String(h == null ? '' : h).trim());
   const dataRows = grid.slice(hi + 1).filter((r) => r && r.some((c) => String(c == null ? '' : c).trim()));
   const hasValue = headers.map((_, i) => dataRows.some((r) => r[i] != null && String(r[i]).trim() !== ''));
-  const mapped = mapColumns(headers, hasValue);
+  let catIdx = -1;
+  for (let i = 0; i < headers.length; i++) {
+    if (!headers[i] || !hasValue[i]) continue;
+    if (DOMAIN_COL_RE.test(headers[i])) { catIdx = i; break; }
+  }
+  const reserved = new Set();
+  if (catIdx >= 0) reserved.add(catIdx);
+  const mapped = mapColumns(headers, hasValue, reserved);
   let locIdx = mapped.col.location != null ? mapped.col.location : -1;
   if (locIdx < 0 || !hasValue[locIdx]) {
     for (let i = 0; i < headers.length; i++) {
@@ -260,10 +227,11 @@ function parseWorkbook(buf) {
       if (CITY_RE.test(headers[i])) { locIdx = i; mapped.used.add(i); break; }
     }
   }
-  let catIdx = -1;
-  for (let i = 0; i < headers.length; i++) {
-    if (!headers[i] || mapped.used.has(i) || !hasValue[i]) continue;
-    if (CATEGORY_RE.test(headers[i])) { catIdx = i; mapped.used.add(i); break; }
+  if (catIdx < 0) {
+    for (let i = 0; i < headers.length; i++) {
+      if (!headers[i] || mapped.used.has(i) || !hasValue[i]) continue;
+      if (CATEGORY_RE.test(headers[i])) { catIdx = i; mapped.used.add(i); break; }
+    }
   }
   const rows = dataRows.map((line) => {
     const val = (i) => { const v = line[i]; return v == null ? '' : String(v).trim(); };
@@ -359,8 +327,7 @@ const state = {
   expandAll: false,
   filters: { q: '', priority: '', area: '', location: '', status: '', bookmarked: false, sort: '' },
   ddSync: [],
-  deferredPrompt: null,
-  areaAssign: null
+  deferredPrompt: null
 };
 
 /* ---------- views ---------- */
@@ -396,7 +363,7 @@ function migrateRows(rec) {
       }
     }
     if (!row.category && row.extras && row.extras.length) {
-      const i = row.extras.findIndex((e) => CATEGORY_RE.test(e.label || ''));
+      const i = row.extras.findIndex((e) => DOMAIN_COL_RE.test(e.label || ''));
       if (i >= 0) {
         row.category = row.extras[i].value;
         row.extras.splice(i, 1);
@@ -547,18 +514,15 @@ function buildFilterDropdowns() {
   };
   mk($('dd-priority'), 'Priority', [{ value: '', label: 'All priorities' }].concat(
     uniqueValues(rows.map((r) => normPriority(r.priority))).map((p) => ({ value: p, label: 'Priority ' + p }))), 'priority');
-  const catVals = uniqueValues(rows.map((r) => r.category));
-  const derived = deriveAreaGroups(rows);
-  state.areaAssign = derived.assign;
-  if (catVals.length > 0) {
-    mk($('dd-area'), 'Category', [{ value: '', label: 'All areas' }].concat(catVals.map((c) => ({ value: c, label: c }))), 'area');
-  } else if (derived.groups.length > 0) {
-    mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(
-      derived.groups.map((g) => ({ value: g, label: g + ' (' + (derived.groupCount.get(g) || 0) + ')' }))), 'area');
-  } else {
-    mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(
-      uniqueValues(rows.reduce((acc, r) => acc.concat(rowAreas(r)), [])).map((a) => ({ value: a, label: a }))), 'area');
-  }
+  const domainCounts = new Map();
+  rows.forEach((r) => {
+    const d = rowDomain(r);
+    domainCounts.set(d, (domainCounts.get(d) || 0) + 1);
+  });
+  const domOpts = Array.from(domainCounts.keys())
+    .sort((a, b) => (domainCounts.get(b) - domainCounts.get(a)) || a.localeCompare(b))
+    .map((d) => ({ value: d, label: d + ' (' + domainCounts.get(d) + ')' }));
+  mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(domOpts), 'area');
   mk($('dd-location'), 'Location', [{ value: '', label: 'All locations' }].concat(
     uniqueValues(rows.map((r) => resolveLocation(r))).map((l) => ({ value: l, label: l }))), 'location');
   mk($('dd-status'), 'Status', [{ value: '', label: 'All statuses' }].concat(
@@ -582,16 +546,7 @@ function visibleRows() {
       r.extras.some((e) => (e.label + ' ' + e.value).toLowerCase().indexOf(q) >= 0));
   }
   if (f.priority) list = list.filter(({ r }) => normPriority(r.priority) === f.priority);
-  if (f.area) list = list.filter(({ r }) => {
-    if (r.category && r.category.toLowerCase() === f.area.toLowerCase()) return true;
-    return rowAreas(r).some((a) => {
-      const t = String(a || '').trim();
-      if (!t) return false;
-      if (t.toLowerCase() === f.area.toLowerCase()) return true;
-      const g = state.areaAssign ? state.areaAssign.get(t) : null;
-      return !!g && g === f.area;
-    });
-  });
+  if (f.area) list = list.filter(({ r }) => rowDomain(r) === f.area);
   if (f.location) list = list.filter(({ r }) => resolveLocation(r).toLowerCase() === f.location.toLowerCase());
   if (f.status) list = list.filter(({ r }) => r.status === f.status);
   if (f.bookmarked) list = list.filter(({ r }) => r.bookmarked);
@@ -603,23 +558,32 @@ function visibleRows() {
 
 /* ---------- email drafts ---------- */
 function buildDraft(r) {
-  const subject = String(r.subject || '').trim() || ('Prospective PhD/RA applicant - ' + r.name);
+  const subject = String(r.subject || '').trim() || ('Prospective PhD/RA applicant - ' + rowDomain(r) + ' - Md Shakhawat Hossain');
   const body = String(r.body || '').trim() || defaultBody(r);
   return 'Subject: ' + subject + '\n\n' + body;
 }
 
 function defaultBody(r) {
-  const sal = r.name ? 'Dear ' + r.name + ',' : 'Dear Professor,';
-  const interest = r.area ? ' I am especially interested in your work on ' + r.area + '.' : '';
-  return sal + '\n\nI am writing to ask about the possibility of joining your research group as a PhD student.' + interest +
-    ' I would be glad to share my CV and discuss how my background might align with your current projects.\n\nThank you for your time.\n\nSincerely,\n[Your name]';
+  const domain = rowDomain(r);
+  const sur = surnameOf(r.name);
+  const greet = sur ? 'Dear Professor/Dr. ' + sur + ',' : 'Dear Professor/Dr. and research team,';
+  const interest = (r.area && String(r.area).trim()) ? String(r.area).trim() : domain;
+  return greet + '\n\n' +
+    'My name is Md Shakhawat Hossain. I hold an MSc in Human-Computer Interaction and a BSc in Computer Science, with experience in empirical evaluation, usability testing, software quality assurance, and AI-supported systems.\n\n' +
+    'I am particularly interested in your work on ' + interest + '.\n\n' +
+    'My background in empirical evaluation and human-centered design connects with this direction, particularly through usability research and AI-supported systems.\n\n' +
+    'I would be interested in exploring ' + interest + ' further, especially through empirical evaluation, usability research, user studies, human-centered design, or responsible deployment where appropriate.\n\n' +
+    'Could you please let me know whether you are currently considering PhD, research assistant, or doctoral researcher applicants, and which application route you prefer?\n\n' +
+    'I would be happy to send my CV, transcripts, and a short research summary.\n\n' +
+    'Thank you for your time.\n\n' +
+    'Best regards,\nMd Shakhawat Hossain';
 }
 
 function sendDraft(card, row) {
   if (!row.email) { toast('No email address saved for this entry', true); return; }
   const ta = card.querySelector('textarea.draft');
   const draft = (ta ? ta.value : buildDraft(row)).trim();
-  let subject = String(row.subject || '').trim() || ('Prospective PhD/RA applicant - ' + row.name);
+  let subject = String(row.subject || '').trim() || ('Prospective PhD/RA applicant - ' + rowDomain(row) + ' - Md Shakhawat Hossain');
   let body = draft;
   const m = draft.match(/^\s*Subject:\s*(.+?)\s*$/im);
   if (m) {
