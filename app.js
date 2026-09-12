@@ -99,9 +99,10 @@ function surnameOf(name) {
    location phrase, postal address anywhere in the row, city after comma
    in the institution field, unambiguous institution-name patterns, known
    university URL slugs, otherwise unresolved. Never the first word of an
-   institution; countries, states and institution words are not cities. */
+   institution; countries, states, institution words and lab names are
+   never cities - checked word by word, not only as whole strings. */
 const CITY_NORMALIZE = { 'München': 'Munich', 'Muenchen': 'Munich', 'Köln': 'Cologne', 'Koln': 'Cologne', 'Nürnberg': 'Nuremberg', 'Nuernberg': 'Nuremberg' };
-const NON_CITY_WORDS = new Set(['germany', 'deutschland', 'austria', 'österreich', 'switzerland', 'schweiz', 'europe', 'europa', 'european', 'worldwide', 'remote', 'online', 'university', 'universität', 'universitaet', 'institute', 'institut', 'college', 'school', 'department', 'chair', 'lab', 'laboratory', 'group', 'center', 'centre', 'campus', 'faculty', 'professor', 'prof', 'gmbh', 'saarland', 'bavaria', 'bayern', 'hessen', 'thuringia', 'thüringen', 'brandenburg', 'saxony', 'sachsen', 'niedersachsen', 'baden-württemberg', 'nordrhein-westfalen', 'nrw']);
+const NON_CITY_WORDS = new Set(['germany', 'deutschland', 'austria', 'österreich', 'switzerland', 'schweiz', 'europe', 'europa', 'european', 'worldwide', 'remote', 'online', 'university', 'universität', 'universitaet', 'univ', 'institute', 'institut', 'college', 'school', 'department', 'chair', 'lab', 'laboratory', 'group', 'center', 'centre', 'campus', 'faculty', 'professor', 'prof', 'gmbh', 'saarland', 'bavaria', 'bayern', 'hessen', 'thuringia', 'thüringen', 'brandenburg', 'saxony', 'sachsen', 'niedersachsen', 'baden-württemberg', 'nordrhein-westfalen', 'nrw', 'tu', 'hochschule', 'kit', 'eth', 'applied', 'sciences', 'science', 'technology', 'technologies', 'studies', 'research', 'international', 'academy', 'hospital', 'clinic', 'library', 'museum', 'foundation', 'association', 'society', 'human', 'computer', 'interaction', 'artificial', 'intelligence', 'security', 'cybersecurity', 'privacy', 'information', 'media', 'knowledge', 'data', 'learning', 'systems', 'system', 'max', 'planck', 'helmholtz', 'fraunhofer', 'leibniz', 'weizenbaum']);
 const CITY_WORD_RE = /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*$/;
 const POSTAL_CITY_RE = /[0-9]{5}\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/;
 
@@ -110,11 +111,35 @@ function isCityLike(s) {
   if (t.length < 3 || t.length > 40) return false;
   if (/[0-9]/.test(t)) return false;
   if (!CITY_WORD_RE.test(t)) return false;
-  if (NON_CITY_WORDS.has(t.toLowerCase())) return false;
+  const words = t.toLowerCase().split(/[\s-]+/);
+  if (words.some((w) => NON_CITY_WORDS.has(w))) return false;
   return true;
 }
 
 function normalizeCityName(c) { return CITY_NORMALIZE[c] || c; }
+
+const INST_CITY_PATTERNS = [
+  /\bUniversity\s+of\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
+  /\bUniversität\s+zu\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\bUniversität\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
+  /\bUniversitaet\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\bTU\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
+  /\bRWTH\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\bHochschule\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\bHelmholtz\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\b(?:University|Universität)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)\s*$/,
+  /\b([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)\s+University\b/
+];
+
+function cityFromInstitution(inst) {
+  let s = String(inst || '').trim().replace(/,\s*(Germany|Deutschland)\s*$/i, '').trim();
+  if (!s) return '';
+  for (let i = 0; i < INST_CITY_PATTERNS.length; i++) {
+    const m = s.match(INST_CITY_PATTERNS[i]);
+    if (m && m[1] && isCityLike(m[1])) return normalizeCityName(m[1]);
+  }
+  return '';
+}
 
 function cleanCity(v) {
   let t = String(v || '').trim();
@@ -128,36 +153,19 @@ function cleanCity(v) {
     const segs = t.split(',').map((s) => s.trim()).filter(Boolean);
     for (let i = segs.length - 1; i >= 0; i--) {
       if (isCityLike(segs[i])) return normalizeCityName(segs[i]);
+      const c = cityFromInstitution(segs[i]);
+      if (c) return c;
     }
   }
   if (isCityLike(t)) return normalizeCityName(t);
+  const c2 = cityFromInstitution(t);
+  if (c2) return c2;
   return '';
 }
 
 function cityFromPhrase(text) {
   const m = String(text || '').match(/(?:located|based|situated|working)\s+in\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/);
   return m && isCityLike(m[1]) ? normalizeCityName(m[1]) : '';
-}
-
-const INST_CITY_PATTERNS = [
-  /\bTU\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
-  /\bRWTH\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
-  /\bUniversität\s+zu\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
-  /\bUniversity\s+of\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
-  /\bUniversität\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
-  /\bUniversitaet\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
-  /\b([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)\s+University\b/,
-  /\bHochschule\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/
-];
-
-function cityFromInstitution(inst) {
-  const s = String(inst || '').trim();
-  if (!s) return '';
-  for (let i = 0; i < INST_CITY_PATTERNS.length; i++) {
-    const m = s.match(INST_CITY_PATTERNS[i]);
-    if (m && m[1] && isCityLike(m[1])) return normalizeCityName(m[1]);
-  }
-  return '';
 }
 
 const URL_CITY_SLUGS = { tuebingen: 'Tübingen', koeln: 'Cologne', cologne: 'Cologne', muenchen: 'Munich', muenster: 'Münster', nuernberg: 'Nuremberg', luebeck: 'Lübeck', wuerzburg: 'Würzburg', osnabrueck: 'Osnabrück', duesseldorf: 'Düsseldorf', saarbruecken: 'Saarbrücken', 'duisburg-essen': 'Duisburg-Essen', aachen: 'Aachen', bremen: 'Bremen', hamburg: 'Hamburg', berlin: 'Berlin', konstanz: 'Konstanz', bamberg: 'Bamberg', bayreuth: 'Bayreuth', oldenburg: 'Oldenburg', stuttgart: 'Stuttgart', darmstadt: 'Darmstadt', kassel: 'Kassel', potsdam: 'Potsdam', freiburg: 'Freiburg', heidelberg: 'Heidelberg', hannover: 'Hannover', jena: 'Jena', leipzig: 'Leipzig', dresden: 'Dresden', bonn: 'Bonn', kiel: 'Kiel', mainz: 'Mainz', mannheim: 'Mannheim', regensburg: 'Regensburg', ulm: 'Ulm', passau: 'Passau', erlangen: 'Erlangen', dortmund: 'Dortmund', magdeburg: 'Magdeburg', rostock: 'Rostock', trier: 'Trier', koblenz: 'Koblenz', chemnitz: 'Chemnitz', cottbus: 'Cottbus', ilmenau: 'Ilmenau', weimar: 'Weimar', braunschweig: 'Braunschweig', frankfurt: 'Frankfurt', garching: 'Garching', ingolstadt: 'Ingolstadt', wolfsburg: 'Wolfsburg', renningen: 'Renningen', 'sankt-augustin': 'Sankt Augustin', saarland: '' };
@@ -186,9 +194,11 @@ function resolveLocation(r) {
   if (addr && isCityLike(addr[1])) return normalizeCityName(addr[1]);
   const inst = String(r.institution || '').trim();
   if (inst.indexOf(',') >= 0) {
-    const segs = inst.split(',').map((s) => s.trim());
+    const segs = inst.split(',').map((s) => s.trim()).filter(Boolean);
     for (let i = segs.length - 1; i >= 0; i--) {
       if (isCityLike(segs[i])) return normalizeCityName(segs[i]);
+      const c = cityFromInstitution(segs[i]);
+      if (c) return c;
     }
   }
   const fromName = cityFromInstitution(inst);
