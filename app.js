@@ -42,6 +42,100 @@ const normPriority = (v) => {
 const CITY_RE = /(city|country|region|state|town|address|place|province|campus|location|continent|based)/i;
 const CATEGORY_RE = /(categor|field|domain|disciplin|theme|track|broad|specializ)/i;
 
+/* ---------- research area grouping ----------
+   Broad groups for the filter are derived by clustering the specific
+   areas: recurring keywords or phrases (appearing in 2+ areas) become
+   groups, synonyms are merged (HCI / Human-Centered / Human Factors),
+   and each area joins its smallest matching group so that, for example,
+   'AI in cybersecurity' lands under Cybersecurity while 'AI in health'
+   lands under AI. */
+const AREA_STOPWORDS = new Set(['in', 'of', 'for', 'and', 'the', 'a', 'an', 'with', 'on', 'to', 'at', 'by', 'from', 'using', 'based', 'research', 'studies', 'study', 'applications', 'methods', 'approaches']);
+const AREA_PHRASE_MAP = [
+  [/human[- ]computer interaction/g, 'human centered'],
+  [/\bhci\b/g, 'human centered'],
+  [/human[- ]centered/g, 'human centered'],
+  [/human[- ]centred/g, 'human centered'],
+  [/human factors/g, 'human centered'],
+  [/artificial intelligence/g, 'ai'],
+  [/\bml\b/g, 'machine learning'],
+  [/natural language processing/g, 'nlp'],
+  [/\biot\b|internet of things/g, 'iot'],
+  [/cyber\s*security/g, 'cybersecurity']
+];
+const SINGLE_DENY = new Set(['learning', 'intelligence', 'computing', 'engineering', 'technology', 'systems', 'sciences', 'analysis', 'processing', 'modeling', 'modelling', 'networks', 'interaction']);
+const AREA_ACRONYMS = { ai: 'AI', nlp: 'NLP', iot: 'IoT', ml: 'ML', xr: 'XR', ar: 'AR', vr: 'VR', cv: 'CV' };
+
+function normalizeAreaString(s) {
+  let t = String(s || '').toLowerCase().replace(/[-_/]/g, ' ').replace(/\s+/g, ' ').trim();
+  AREA_PHRASE_MAP.forEach((pair) => { t = t.replace(pair[0], pair[1]); });
+  return t;
+}
+
+function areaLabel(phrase) {
+  if (phrase === 'human centered') return 'Human-Centered';
+  return phrase.split(' ').map((w) => AREA_ACRONYMS[w] || (w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+}
+
+function deriveAreaGroups(rows) {
+  const counts = new Map();
+  rows.forEach((r) => rowAreas(r).forEach((a) => {
+    const t = String(a || '').trim();
+    if (t) counts.set(t, (counts.get(t) || 0) + 1);
+  }));
+  const distinct = Array.from(counts.keys());
+  const assign = new Map();
+  const groupCount = new Map();
+  const groups = [];
+  if (distinct.length < 2) return { assign, groups, groupCount };
+  const seqs = new Map();
+  distinct.forEach((area) => {
+    seqs.set(area, normalizeAreaString(area).split(/[^a-z0-9]+/).filter((w) => w && !AREA_STOPWORDS.has(w)));
+  });
+  const cand = new Map();
+  distinct.forEach((area) => {
+    const words = seqs.get(area);
+    for (let n = 1; n <= 3; n++) {
+      for (let i = 0; i + n <= words.length; i++) {
+        const p = words.slice(i, i + n).join(' ');
+        if (!cand.has(p)) cand.set(p, new Set());
+        cand.get(p).add(area);
+      }
+    }
+  });
+  const keys = [];
+  cand.forEach((set, p) => {
+    if (set.size < 2) return;
+    const ws = p.split(' ');
+    if (ws.length === 1 && SINGLE_DENY.has(p)) return;
+    keys.push({ phrase: p, size: set.size, len: ws.length, set: set });
+  });
+  const keysFiltered = keys.filter((k) => !keys.some((o) =>
+    o !== k && o.len > k.len && (' ' + o.phrase + ' ').indexOf(' ' + k.phrase + ' ') >= 0 &&
+    Array.from(k.set).every((a) => o.set.has(a))
+  ));
+  distinct.forEach((area) => {
+    const words = seqs.get(area);
+    let best = null;
+    keysFiltered.forEach((k) => {
+      const kw = k.phrase.split(' ');
+      let matched = false;
+      for (let i = 0; i + kw.length <= words.length; i++) {
+        let ok = true;
+        for (let j = 0; j < kw.length; j++) { if (words[i + j] !== kw[j]) { ok = false; break; } }
+        if (ok) { matched = true; break; }
+      }
+      if (!matched) return;
+      if (!best || k.size < best.size || (k.size === best.size && k.len > best.len)) best = k;
+    });
+    const g = best ? areaLabel(best.phrase) : 'Other';
+    assign.set(area, g);
+    groupCount.set(g, (groupCount.get(g) || 0) + counts.get(area));
+  });
+  Array.from(groupCount.keys()).filter((g) => g !== 'Other').sort((a, b) => a.localeCompare(b)).forEach((g) => groups.push(g));
+  if (groupCount.has('Other')) groups.push('Other');
+  return { assign, groups, groupCount };
+}
+
 /* ---------- location inference ----------
    Fallback chain: city/address column, then a city-like stray field,
    then derived from the institution name (e.g. TU Munich -> Munich),
@@ -265,7 +359,8 @@ const state = {
   expandAll: false,
   filters: { q: '', priority: '', area: '', location: '', status: '', bookmarked: false, sort: '' },
   ddSync: [],
-  deferredPrompt: null
+  deferredPrompt: null,
+  areaAssign: null
 };
 
 /* ---------- views ---------- */
@@ -453,11 +548,16 @@ function buildFilterDropdowns() {
   mk($('dd-priority'), 'Priority', [{ value: '', label: 'All priorities' }].concat(
     uniqueValues(rows.map((r) => normPriority(r.priority))).map((p) => ({ value: p, label: 'Priority ' + p }))), 'priority');
   const catVals = uniqueValues(rows.map((r) => r.category));
-  const areaVals = uniqueValues(rows.reduce((acc, r) => acc.concat(rowAreas(r)), []));
+  const derived = deriveAreaGroups(rows);
+  state.areaAssign = derived.assign;
   if (catVals.length > 0) {
     mk($('dd-area'), 'Category', [{ value: '', label: 'All areas' }].concat(catVals.map((c) => ({ value: c, label: c }))), 'area');
+  } else if (derived.groups.length > 0) {
+    mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(
+      derived.groups.map((g) => ({ value: g, label: g + ' (' + (derived.groupCount.get(g) || 0) + ')' }))), 'area');
   } else {
-    mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(areaVals.map((a) => ({ value: a, label: a }))), 'area');
+    mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(
+      uniqueValues(rows.reduce((acc, r) => acc.concat(rowAreas(r)), [])).map((a) => ({ value: a, label: a }))), 'area');
   }
   mk($('dd-location'), 'Location', [{ value: '', label: 'All locations' }].concat(
     uniqueValues(rows.map((r) => resolveLocation(r))).map((l) => ({ value: l, label: l }))), 'location');
@@ -482,9 +582,16 @@ function visibleRows() {
       r.extras.some((e) => (e.label + ' ' + e.value).toLowerCase().indexOf(q) >= 0));
   }
   if (f.priority) list = list.filter(({ r }) => normPriority(r.priority) === f.priority);
-  if (f.area) list = list.filter(({ r }) =>
-    (r.category && r.category.toLowerCase() === f.area.toLowerCase()) ||
-    rowAreas(r).some((a) => a.toLowerCase() === f.area.toLowerCase()));
+  if (f.area) list = list.filter(({ r }) => {
+    if (r.category && r.category.toLowerCase() === f.area.toLowerCase()) return true;
+    return rowAreas(r).some((a) => {
+      const t = String(a || '').trim();
+      if (!t) return false;
+      if (t.toLowerCase() === f.area.toLowerCase()) return true;
+      const g = state.areaAssign ? state.areaAssign.get(t) : null;
+      return !!g && g === f.area;
+    });
+  });
   if (f.location) list = list.filter(({ r }) => resolveLocation(r).toLowerCase() === f.location.toLowerCase());
   if (f.status) list = list.filter(({ r }) => r.status === f.status);
   if (f.bookmarked) list = list.filter(({ r }) => r.bookmarked);
