@@ -11,11 +11,14 @@ const ENT = { '&': '&' + 'amp;', '<': '&' + 'lt;', '>': '&' + 'gt;', '"': '&' + 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ENT[c]);
 const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const safeUrl = (u) => /^https?:\/\//i.test(u) ? u : 'https://' + u;
+const splitArea = (v) => String(v || '').split(/[,;|]+/).map((s) => s.trim()).filter(Boolean);
+const rowAreas = (r) => (r.areas && r.areas.length ? r.areas : splitArea(r.area));
 
 const SVG = {
   chevron: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   star: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
   copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  send: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   pencil: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
   trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
@@ -36,6 +39,7 @@ const normPriority = (v) => {
   if (/^(c|3|low)$/i.test(t)) return 'C';
   return null;
 };
+const CITY_RE = /(city|country|region|state|town|address|place|province|campus|location|continent)/i;
 
 /* ---------- Excel column mapping ----------
    Known fields are matched by header name (flexible), everything else
@@ -46,13 +50,13 @@ const FIELD_DEFS = [
   { key: 'name', exact: ['name', 'professorname', 'professor', 'prof', 'pi', 'supervisor', 'advisor', 'facultyname', 'faculty'], contains: ['name', 'professor', 'supervisor', 'advisor'] },
   { key: 'email', exact: ['email', 'emailaddress', 'mail', 'contact', 'contactemail'], contains: ['email', 'mail'] },
   { key: 'institution', exact: ['university', 'institution', 'institute', 'school', 'college', 'organization', 'organisation', 'affiliation', 'uni'], contains: ['university', 'institution', 'institute', 'school', 'college', 'affiliation'] },
-  { key: 'location', exact: ['location', 'country', 'region', 'city', 'place', 'nation', 'state'], contains: ['location', 'country', 'region', 'city'] },
+  { key: 'location', exact: ['location', 'country', 'region', 'city', 'place', 'nation', 'state', 'address', 'town', 'province', 'campus', 'basedin', 'continent', 'where'], contains: ['location', 'country', 'region', 'city', 'town', 'address', 'province'] },
   { key: 'area', exact: ['researcharea', 'area', 'field', 'research', 'researchinterests', 'researchinterest', 'researchtopics', 'topics', 'topic', 'researchfield', 'interests'], contains: ['research', 'area', 'field', 'interest', 'topic'] },
   { key: 'priority', exact: ['priority', 'prio', 'rank', 'tier'], contains: ['priority', 'prio'] },
   { key: 'status', exact: ['status', 'applicationstatus', 'appstatus'], contains: ['status'] },
   { key: 'notes', exact: ['notes', 'note', 'comments', 'comment', 'remarks'], contains: ['note', 'comment', 'remark'] }
 ];
-const LINK_HINTS = ['link', 'links', 'website', 'url', 'homepage', 'webpage', 'site', 'page', 'scholar', 'profile', 'lab'];
+const LINK_HINTS = ['link', 'links', 'website', 'url', 'homepage', 'webpage', 'site', 'page', 'scholar', 'profile', 'lab', 'job', 'posting', 'vacancy', 'opening'];
 
 function mapColumns(headers) {
   const nh = headers.map(normHeader);
@@ -66,10 +70,14 @@ function mapColumns(headers) {
   });
   FIELD_DEFS.forEach((def) => {
     if (col[def.key] != null) return;
+    let best = -1;
     for (let i = 0; i < nh.length; i++) {
       if (used.has(i) || !nh[i]) continue;
-      if (def.contains.some((p) => nh[i].indexOf(p) >= 0)) { col[def.key] = i; used.add(i); break; }
+      if (def.contains.some((p) => nh[i].indexOf(p) >= 0)) {
+        if (best < 0 || nh[i].length < nh[best].length) best = i;
+      }
     }
+    if (best >= 0) { col[def.key] = best; used.add(best); }
   });
   const links = [];
   for (let i = 0; i < nh.length; i++) {
@@ -91,17 +99,26 @@ function parseWorkbook(buf) {
   if (hi < 0) throw new Error('empty');
   const headers = grid[hi].map((h) => String(h == null ? '' : h).trim());
   const mapped = mapColumns(headers);
+  let locIdx = mapped.col.location != null ? mapped.col.location : -1;
+  if (locIdx < 0) {
+    for (let i = 0; i < headers.length; i++) {
+      if (!headers[i] || mapped.used.has(i)) continue;
+      if (CITY_RE.test(headers[i])) { locIdx = i; mapped.used.add(i); break; }
+    }
+  }
   const rows = [];
   for (let ri = hi + 1; ri < grid.length; ri++) {
     const line = grid[ri];
     if (!line || !line.some((c) => String(c == null ? '' : c).trim())) continue;
     const val = (i) => { const v = line[i]; return v == null ? '' : String(v).trim(); };
+    const areaVal = mapped.col.area != null ? val(mapped.col.area) : '';
     const row = {
       name: mapped.col.name != null ? val(mapped.col.name) : '',
       email: mapped.col.email != null ? val(mapped.col.email) : '',
       institution: mapped.col.institution != null ? val(mapped.col.institution) : '',
-      location: mapped.col.location != null ? val(mapped.col.location) : '',
-      area: mapped.col.area != null ? val(mapped.col.area) : '',
+      location: locIdx >= 0 ? val(locIdx) : '',
+      area: areaVal,
+      areas: splitArea(areaVal),
       priority: mapped.col.priority != null ? val(mapped.col.priority) : '',
       subject: mapped.col.subject != null ? val(mapped.col.subject) : '',
       body: mapped.col.body != null ? val(mapped.col.body) : '',
@@ -208,6 +225,22 @@ function updateNav() {
   $('btn-bookmarks').classList.toggle('active', state.view === 'bookmarks');
 }
 
+/* Promote a city-like extra field to location for rows saved by older versions */
+function migrateRows(rec) {
+  let changed = false;
+  rec.rows.forEach((row) => {
+    if (!row.location && row.extras && row.extras.length) {
+      const i = row.extras.findIndex((e) => CITY_RE.test(e.label || ''));
+      if (i >= 0) {
+        row.location = row.extras[i].value;
+        row.extras.splice(i, 1);
+        changed = true;
+      }
+    }
+  });
+  return changed;
+}
+
 async function refreshFiles() {
   state.files = (await dbAll()).sort((a, b) => b.uploadedAt - a.uploadedAt);
   if (state.file) state.file = state.files.find((f) => f.id === state.file.id) || null;
@@ -220,6 +253,7 @@ async function openFile(id) {
   if (!rec) { showView('upload'); return; }
   state.file = rec;
   await metaSet('lastFileId', id);
+  if (migrateRows(rec)) dbPut(rec);
   state.open.clear();
   state.expandAll = false;
   buildFilterDropdowns();
@@ -348,7 +382,7 @@ function buildFilterDropdowns() {
   mk($('dd-priority'), 'Priority', [{ value: '', label: 'All priorities' }].concat(
     uniqueValues(rows.map((r) => normPriority(r.priority))).map((p) => ({ value: p, label: 'Priority ' + p }))), 'priority');
   mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(
-    uniqueValues(rows.map((r) => r.area)).map((a) => ({ value: a, label: a.length > 34 ? a.slice(0, 32) + '…' : a }))), 'area');
+    uniqueValues(rows.reduce((acc, r) => acc.concat(rowAreas(r)), [])).map((a) => ({ value: a, label: a }))), 'area');
   mk($('dd-location'), 'Location', [{ value: '', label: 'All locations' }].concat(
     uniqueValues(rows.map((r) => r.location)).map((l) => ({ value: l, label: l }))), 'location');
   mk($('dd-status'), 'Status', [{ value: '', label: 'All statuses' }].concat(
@@ -372,7 +406,7 @@ function visibleRows() {
       r.extras.some((e) => (e.label + ' ' + e.value).toLowerCase().indexOf(q) >= 0));
   }
   if (f.priority) list = list.filter(({ r }) => normPriority(r.priority) === f.priority);
-  if (f.area) list = list.filter(({ r }) => (r.area || '').toLowerCase() === f.area.toLowerCase());
+  if (f.area) list = list.filter(({ r }) => rowAreas(r).some((a) => a.toLowerCase() === f.area.toLowerCase()));
   if (f.location) list = list.filter(({ r }) => (r.location || '').toLowerCase() === f.location.toLowerCase());
   if (f.status) list = list.filter(({ r }) => r.status === f.status);
   if (f.bookmarked) list = list.filter(({ r }) => r.bookmarked);
@@ -418,19 +452,14 @@ function cardHTML(file, r, i, showFile) {
   const tier = (normPriority(r.priority) || 'c').toLowerCase();
   const prioBadge = r.priority ? '<span class="badge prio-' + tier + '">' + esc(r.priority) + '</span>' : '';
   const fileBadge = showFile ? '<span class="badge file-badge" title="' + esc(file.name) + '">' + esc(file.name) + '</span>' : '';
-  const areas = String(r.area || '').split(/[,;|]+/).map((s) => s.trim()).filter(Boolean);
+  const areas = rowAreas(r);
   const chips = areas.map((a) => '<span class="chip">' + esc(a) + '</span>').join('');
-  const subjectField = r.subject
-    ? '<div class="field"><div class="field-label">Email subject (from file)</div><div class="field-value">' + esc(r.subject) + '</div></div>'
-    : '';
   const extras = r.extras.map((e) =>
     '<div class="field"><div class="field-label">' + esc(e.label) + '</div><div class="field-value">' + esc(e.value) + '</div></div>'
   ).join('');
-  const links = r.links.length
-    ? '<div class="field"><div class="field-label">Links</div><div class="field-value">' +
-      r.links.map((l) => '<a href="' + esc(safeUrl(l.url)) + '" target="_blank" rel="noopener">' + esc(l.label && l.label !== 'Link' ? l.label : l.url) + '</a>').join('<br>') +
-      '</div></div>'
-    : '';
+  const linkFields = r.links.map((l) =>
+    '<div class="field"><div class="field-label">' + esc(l.label || 'Link') + '</div><div class="field-value"><a href="' + esc(safeUrl(l.url)) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a></div></div>'
+  ).join('');
   const emailField =
     '<div class="field"><div class="field-label">Email</div><div class="field-value email-value">' +
     '<span class="email-text">' + (r.email ? esc(r.email) : '<span class="muted">not set</span>') + '</span>' +
@@ -439,16 +468,15 @@ function cardHTML(file, r, i, showFile) {
     '</div></div>';
   const draftVal = r.draft != null ? r.draft : buildDraft(r);
   const body =
-    emailField +
-    subjectField +
     (areas.length ? '<div class="field"><div class="field-label">Research areas</div><div class="chips">' + chips + '</div></div>' : '') +
     extras +
-    links +
+    linkFields +
     '<div class="field"><div class="field-label">Notes</div><textarea class="notes" placeholder="Your notes…">' + esc(r.notes || '') + '</textarea></div>' +
+    emailField +
     '<div class="field"><div class="field-label">Email draft</div><textarea class="draft">' + esc(draftVal) + '</textarea>' +
-    '<div class="draft-actions">' +
-    '<button class="btn btn-ghost" data-act="copy-draft">' + SVG.copy + ' Copy draft</button>' +
-    '<button class="btn btn-primary" data-act="send">Send</button>' +
+    '<div class="draft-actions" style="justify-content:space-between">' +
+    '<button class="btn btn-primary" data-act="send">' + SVG.send + ' Send</button>' +
+    '<button class="btn btn-ghost" data-act="copy-draft" title="Copy draft" aria-label="Copy draft">' + SVG.copy + '</button>' +
     '</div></div>';
   return (
     '<div class="card' + (open ? ' open' : '') + '" data-file="' + file.id + '" data-idx="' + i + '">' +
