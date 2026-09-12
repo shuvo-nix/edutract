@@ -95,49 +95,106 @@ function surnameOf(name) {
 }
 
 /* ---------- location inference ----------
-   Fallback chain: city/address column, then a city-like stray field,
-   then derived from the institution name (e.g. TU Munich -> Munich),
-   then a phrase like 'located in X' inside other row text. */
-const UNI_CITY_PATTERNS = [
-  /university of ([a-zA-Z\u00C0-\u024F'’-]+(?:\s+[a-zA-Z\u00C0-\u024F'’-]+)?)/,
-  /universit(?:a|ä)t ([a-zA-Z\u00C0-\u024F'’-]+(?:\s+[a-zA-Z\u00C0-\u024F'’-]+)?)/,
-  /\bTU\s+([a-zA-Z\u00C0-\u024F'’-]+)/,
-  /\b([a-zA-Z\u00C0-\u024F'’-]+)\s+[Uu]niversity\b/,
-  /\b([a-zA-Z\u00C0-\u024F'’-]+)\s+(?:Institute|College|School|Academy|Polytechnic)\b/
+   Priority chain: dedicated location column (cleaned), explicit vacancy
+   location phrase, postal address anywhere in the row, city after comma
+   in the institution field, unambiguous institution-name patterns, known
+   university URL slugs, otherwise unresolved. Never the first word of an
+   institution; countries, states and institution words are not cities. */
+const CITY_NORMALIZE = { 'München': 'Munich', 'Muenchen': 'Munich', 'Köln': 'Cologne', 'Koln': 'Cologne', 'Nürnberg': 'Nuremberg', 'Nuernberg': 'Nuremberg' };
+const NON_CITY_WORDS = new Set(['germany', 'deutschland', 'austria', 'österreich', 'switzerland', 'schweiz', 'europe', 'europa', 'european', 'worldwide', 'remote', 'online', 'university', 'universität', 'universitaet', 'institute', 'institut', 'college', 'school', 'department', 'chair', 'lab', 'laboratory', 'group', 'center', 'centre', 'campus', 'faculty', 'professor', 'prof', 'gmbh', 'saarland', 'bavaria', 'bayern', 'hessen', 'thuringia', 'thüringen', 'brandenburg', 'saxony', 'sachsen', 'niedersachsen', 'baden-württemberg', 'nordrhein-westfalen', 'nrw']);
+const CITY_WORD_RE = /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*$/;
+const POSTAL_CITY_RE = /[0-9]{5}\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/;
+
+function isCityLike(s) {
+  const t = String(s || '').trim();
+  if (t.length < 3 || t.length > 40) return false;
+  if (/[0-9]/.test(t)) return false;
+  if (!CITY_WORD_RE.test(t)) return false;
+  if (NON_CITY_WORDS.has(t.toLowerCase())) return false;
+  return true;
+}
+
+function normalizeCityName(c) { return CITY_NORMALIZE[c] || c; }
+
+function cleanCity(v) {
+  let t = String(v || '').trim();
+  if (!t) return '';
+  if (t.indexOf('/') >= 0 || /^(germany-wide|deutschlandweit|multiple german locations)$/i.test(t)) return t;
+  const addr = t.match(POSTAL_CITY_RE);
+  if (addr && isCityLike(addr[1])) return normalizeCityName(addr[1]);
+  t = t.replace(/,\s*(Germany|Deutschland)\s*$/i, '').trim();
+  if (!t) return '';
+  if (t.indexOf(',') >= 0) {
+    const segs = t.split(',').map((s) => s.trim()).filter(Boolean);
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (isCityLike(segs[i])) return normalizeCityName(segs[i]);
+    }
+  }
+  if (isCityLike(t)) return normalizeCityName(t);
+  return '';
+}
+
+function cityFromPhrase(text) {
+  const m = String(text || '').match(/(?:located|based|situated|working)\s+in\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:[ -](?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+|am|an|der|den|im|au|auf|und|de))*)/);
+  return m && isCityLike(m[1]) ? normalizeCityName(m[1]) : '';
+}
+
+const INST_CITY_PATTERNS = [
+  /\bTU\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
+  /\bRWTH\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\bUniversität\s+zu\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\bUniversity\s+of\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
+  /\bUniversität\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+(?:-[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)*)/,
+  /\bUniversitaet\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/,
+  /\b([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)\s+University\b/,
+  /\bHochschule\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß]+)/
 ];
 
 function cityFromInstitution(inst) {
   const s = String(inst || '').trim();
   if (!s) return '';
-  for (let i = 0; i < UNI_CITY_PATTERNS.length; i++) {
-    const m = s.match(UNI_CITY_PATTERNS[i]);
-    if (m && m[1]) {
-      let c = m[1].trim();
-      c = c.replace(/^(the|der|die|das|le|la|el)\s+/i, '');
-      c = c.replace(/\s+(for|of|the|and|at)\b[\s\S]*$/i, '').trim();
-      if (c.length > 1) return c;
-    }
+  for (let i = 0; i < INST_CITY_PATTERNS.length; i++) {
+    const m = s.match(INST_CITY_PATTERNS[i]);
+    if (m && m[1] && isCityLike(m[1])) return normalizeCityName(m[1]);
   }
   return '';
 }
 
-function cityFromText(text) {
-  const m = String(text || '').match(/(?:located|based|situated|working)\s+in\s+([A-Z][a-zA-Z\u00C0-\u024F'’.-]+(?:\s+[A-Z][a-zA-Z\u00C0-\u024F'’.-]+)?)/);
-  return m ? m[1] : '';
+const URL_CITY_SLUGS = { tuebingen: 'Tübingen', koeln: 'Cologne', cologne: 'Cologne', muenchen: 'Munich', muenster: 'Münster', nuernberg: 'Nuremberg', luebeck: 'Lübeck', wuerzburg: 'Würzburg', osnabrueck: 'Osnabrück', duesseldorf: 'Düsseldorf', saarbruecken: 'Saarbrücken', 'duisburg-essen': 'Duisburg-Essen', aachen: 'Aachen', bremen: 'Bremen', hamburg: 'Hamburg', berlin: 'Berlin', konstanz: 'Konstanz', bamberg: 'Bamberg', bayreuth: 'Bayreuth', oldenburg: 'Oldenburg', stuttgart: 'Stuttgart', darmstadt: 'Darmstadt', kassel: 'Kassel', potsdam: 'Potsdam', freiburg: 'Freiburg', heidelberg: 'Heidelberg', hannover: 'Hannover', jena: 'Jena', leipzig: 'Leipzig', dresden: 'Dresden', bonn: 'Bonn', kiel: 'Kiel', mainz: 'Mainz', mannheim: 'Mannheim', regensburg: 'Regensburg', ulm: 'Ulm', passau: 'Passau', erlangen: 'Erlangen', dortmund: 'Dortmund', magdeburg: 'Magdeburg', rostock: 'Rostock', trier: 'Trier', koblenz: 'Koblenz', chemnitz: 'Chemnitz', cottbus: 'Cottbus', ilmenau: 'Ilmenau', weimar: 'Weimar', braunschweig: 'Braunschweig', frankfurt: 'Frankfurt', garching: 'Garching', ingolstadt: 'Ingolstadt', wolfsburg: 'Wolfsburg', renningen: 'Renningen', 'sankt-augustin': 'Sankt Augustin', saarland: '' };
+
+function cityFromUrls(links) {
+  const urls = (links || []).map((l) => String(l.url || '').toLowerCase()).join(' ');
+  if (!urls) return '';
+  if (/(^|[./])tum\.de/.test(urls)) return 'Munich';
+  if (urls.indexOf('rwth-aachen') >= 0) return 'Aachen';
+  const m = urls.match(/(?:uni|tu|fh|th|hs|hochschule)-([a-z]+(?:-[a-z]+)*)\.de/);
+  if (m && Object.prototype.hasOwnProperty.call(URL_CITY_SLUGS, m[1])) return URL_CITY_SLUGS[m[1]];
+  return '';
 }
 
 function resolveLocation(r) {
-  if (r.location) return r.location;
-  let c = cityFromInstitution(r.institution);
-  if (c) return c;
-  if (r.extras && r.extras.length) {
-    for (let i = 0; i < r.extras.length; i++) {
-      c = cityFromText(r.extras[i].value);
-      if (c) return c;
+  const colCity = cleanCity(r.location);
+  if (colCity) return colCity;
+  const texts = [];
+  if (r.institution) texts.push(r.institution);
+  (r.extras || []).forEach((e) => { texts.push(e.label + ' ' + e.value); });
+  if (r.notes) texts.push(r.notes);
+  const allText = texts.join(' | ');
+  const ph = cityFromPhrase(allText);
+  if (ph) return ph;
+  const addr = allText.match(POSTAL_CITY_RE);
+  if (addr && isCityLike(addr[1])) return normalizeCityName(addr[1]);
+  const inst = String(r.institution || '').trim();
+  if (inst.indexOf(',') >= 0) {
+    const segs = inst.split(',').map((s) => s.trim());
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (isCityLike(segs[i])) return normalizeCityName(segs[i]);
     }
   }
-  c = cityFromText(r.notes);
-  if (c) return c;
+  const fromName = cityFromInstitution(inst);
+  if (fromName) return fromName;
+  const fromUrl = cityFromUrls(r.links);
+  if (fromUrl) return fromUrl;
   return '';
 }
 
@@ -523,8 +580,16 @@ function buildFilterDropdowns() {
     .sort((a, b) => (domainCounts.get(b) - domainCounts.get(a)) || a.localeCompare(b))
     .map((d) => ({ value: d, label: d + ' (' + domainCounts.get(d) + ')' }));
   mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(domOpts), 'area');
-  mk($('dd-location'), 'Location', [{ value: '', label: 'All locations' }].concat(
-    uniqueValues(rows.map((r) => resolveLocation(r))).map((l) => ({ value: l, label: l }))), 'location');
+  const locCounts = new Map();
+  let anyNoLoc = false;
+  rows.forEach((r) => {
+    const v = resolveLocation(r);
+    if (v) locCounts.set(v, (locCounts.get(v) || 0) + 1);
+    else anyNoLoc = true;
+  });
+  const locOpts = Array.from(locCounts.keys()).sort((a, b) => a.localeCompare(b)).map((l) => ({ value: l, label: l }));
+  if (anyNoLoc) locOpts.push({ value: '__none__', label: 'Location not specified' });
+  mk($('dd-location'), 'Location', [{ value: '', label: 'All locations' }].concat(locOpts), 'location');
   mk($('dd-status'), 'Status', [{ value: '', label: 'All statuses' }].concat(
     STATUSES.map((s) => ({ value: s, label: s }))), 'status');
   mk($('dd-sort'), 'Sort', [
@@ -547,7 +612,10 @@ function visibleRows() {
   }
   if (f.priority) list = list.filter(({ r }) => normPriority(r.priority) === f.priority);
   if (f.area) list = list.filter(({ r }) => rowDomain(r) === f.area);
-  if (f.location) list = list.filter(({ r }) => resolveLocation(r).toLowerCase() === f.location.toLowerCase());
+  if (f.location) list = list.filter(({ r }) => {
+    const v = resolveLocation(r);
+    return f.location === '__none__' ? !v : v === f.location;
+  });
   if (f.status) list = list.filter(({ r }) => r.status === f.status);
   if (f.bookmarked) list = list.filter(({ r }) => r.bookmarked);
   if (f.sort === 'name-az') list.sort((a, b) => a.r.name.localeCompare(b.r.name));
