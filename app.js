@@ -39,45 +39,103 @@ const normPriority = (v) => {
   if (/^(c|3|low)$/i.test(t)) return 'C';
   return null;
 };
-const CITY_RE = /(city|country|region|state|town|address|place|province|campus|location|continent)/i;
+const CITY_RE = /(city|country|region|state|town|address|place|province|campus|location|continent|based)/i;
+const CATEGORY_RE = /(categor|field|domain|disciplin|theme|track|broad|specializ)/i;
+
+/* ---------- location inference ----------
+   Fallback chain: city/address column, then a city-like stray field,
+   then derived from the institution name (e.g. TU Munich -> Munich),
+   then a phrase like 'located in X' inside other row text. */
+const UNI_CITY_PATTERNS = [
+  /university of ([a-zA-Z\u00C0-\u024F'’-]+(?:\s+[a-zA-Z\u00C0-\u024F'’-]+)?)/,
+  /universit(?:a|ä)t ([a-zA-Z\u00C0-\u024F'’-]+(?:\s+[a-zA-Z\u00C0-\u024F'’-]+)?)/,
+  /\bTU\s+([a-zA-Z\u00C0-\u024F'’-]+)/,
+  /\b([a-zA-Z\u00C0-\u024F'’-]+)\s+[Uu]niversity\b/,
+  /\b([a-zA-Z\u00C0-\u024F'’-]+)\s+(?:Institute|College|School|Academy|Polytechnic)\b/
+];
+
+function cityFromInstitution(inst) {
+  const s = String(inst || '').trim();
+  if (!s) return '';
+  for (let i = 0; i < UNI_CITY_PATTERNS.length; i++) {
+    const m = s.match(UNI_CITY_PATTERNS[i]);
+    if (m && m[1]) {
+      let c = m[1].trim();
+      c = c.replace(/^(the|der|die|das|le|la|el)\s+/i, '');
+      c = c.replace(/\s+(for|of|the|and|at)\b[\s\S]*$/i, '').trim();
+      if (c.length > 1) return c;
+    }
+  }
+  return '';
+}
+
+function cityFromText(text) {
+  const m = String(text || '').match(/(?:located|based|situated|working)\s+in\s+([A-Z][a-zA-Z\u00C0-\u024F'’.-]+(?:\s+[A-Z][a-zA-Z\u00C0-\u024F'’.-]+)?)/);
+  return m ? m[1] : '';
+}
+
+function resolveLocation(r) {
+  if (r.location) return r.location;
+  let c = cityFromInstitution(r.institution);
+  if (c) return c;
+  if (r.extras && r.extras.length) {
+    for (let i = 0; i < r.extras.length; i++) {
+      c = cityFromText(r.extras[i].value);
+      if (c) return c;
+    }
+  }
+  c = cityFromText(r.notes);
+  if (c) return c;
+  return '';
+}
 
 /* ---------- Excel column mapping ----------
-   Known fields are matched by header name (flexible), everything else
-   is displayed as an extra field so no column is ever hidden. */
+   Known fields are matched by header name (flexible, preferring columns
+   that actually contain data), everything else is displayed as an extra
+   field so no column is ever hidden. */
 const FIELD_DEFS = [
   { key: 'subject', exact: ['emailsubject', 'subject', 'subjectline', 'emailsubjectline', 'mailsubject'], contains: ['subject'] },
   { key: 'body', exact: ['emailbody', 'body', 'emailcontent', 'emailmessage', 'message', 'mailbody', 'emailtext', 'draft'], contains: ['body', 'message', 'draft', 'content'] },
   { key: 'name', exact: ['name', 'professorname', 'professor', 'prof', 'pi', 'supervisor', 'advisor', 'facultyname', 'faculty'], contains: ['name', 'professor', 'supervisor', 'advisor'] },
   { key: 'email', exact: ['email', 'emailaddress', 'mail', 'contact', 'contactemail'], contains: ['email', 'mail'] },
   { key: 'institution', exact: ['university', 'institution', 'institute', 'school', 'college', 'organization', 'organisation', 'affiliation', 'uni'], contains: ['university', 'institution', 'institute', 'school', 'college', 'affiliation'] },
-  { key: 'location', exact: ['location', 'country', 'region', 'city', 'place', 'nation', 'state', 'address', 'town', 'province', 'campus', 'basedin', 'continent', 'where'], contains: ['location', 'country', 'region', 'city', 'town', 'address', 'province'] },
-  { key: 'area', exact: ['researcharea', 'area', 'field', 'research', 'researchinterests', 'researchinterest', 'researchtopics', 'topics', 'topic', 'researchfield', 'interests'], contains: ['research', 'area', 'field', 'interest', 'topic'] },
+  { key: 'location', exact: ['location', 'country', 'region', 'city', 'place', 'nation', 'state', 'address', 'town', 'province', 'campus', 'basedin', 'continent', 'where'], contains: ['location', 'country', 'region', 'city', 'town', 'address', 'province', 'place', 'campus', 'state', 'nation', 'based', 'geo'] },
+  { key: 'area', exact: ['researchareas', 'researcharea', 'areas', 'area', 'researchinterests', 'researchinterest', 'interests', 'researchtopics', 'topics', 'topic', 'research'], contains: ['research', 'area', 'interest', 'topic'] },
   { key: 'priority', exact: ['priority', 'prio', 'rank', 'tier'], contains: ['priority', 'prio'] },
   { key: 'status', exact: ['status', 'applicationstatus', 'appstatus'], contains: ['status'] },
   { key: 'notes', exact: ['notes', 'note', 'comments', 'comment', 'remarks'], contains: ['note', 'comment', 'remark'] }
 ];
 const LINK_HINTS = ['link', 'links', 'website', 'url', 'homepage', 'webpage', 'site', 'page', 'scholar', 'profile', 'lab', 'job', 'posting', 'vacancy', 'opening'];
 
-function mapColumns(headers) {
+function mapColumns(headers, hasValue) {
   const nh = headers.map(normHeader);
   const col = {};
   const used = new Set();
   FIELD_DEFS.forEach((def) => {
+    let fallback = -1;
     for (let i = 0; i < nh.length; i++) {
       if (used.has(i) || !nh[i]) continue;
-      if (def.exact.indexOf(nh[i]) >= 0) { col[def.key] = i; used.add(i); break; }
+      if (def.exact.indexOf(nh[i]) >= 0) {
+        if (hasValue[i]) { col[def.key] = i; used.add(i); return; }
+        if (fallback < 0) fallback = i;
+      }
     }
+    if (fallback >= 0) { col[def.key] = fallback; used.add(fallback); }
   });
   FIELD_DEFS.forEach((def) => {
     if (col[def.key] != null) return;
     let best = -1;
+    let bestEmpty = -1;
     for (let i = 0; i < nh.length; i++) {
       if (used.has(i) || !nh[i]) continue;
       if (def.contains.some((p) => nh[i].indexOf(p) >= 0)) {
-        if (best < 0 || nh[i].length < nh[best].length) best = i;
+        if (hasValue[i]) {
+          if (best < 0 || nh[i].length < nh[best].length) best = i;
+        } else if (bestEmpty < 0 || nh[i].length < nh[bestEmpty].length) bestEmpty = i;
       }
     }
-    if (best >= 0) { col[def.key] = best; used.add(best); }
+    const chosen = best >= 0 ? best : bestEmpty;
+    if (chosen >= 0) { col[def.key] = chosen; used.add(chosen); }
   });
   const links = [];
   for (let i = 0; i < nh.length; i++) {
@@ -98,18 +156,22 @@ function parseWorkbook(buf) {
   if (hi < 0) hi = grid.findIndex((r) => r.some((c) => String(c == null ? '' : c).trim()));
   if (hi < 0) throw new Error('empty');
   const headers = grid[hi].map((h) => String(h == null ? '' : h).trim());
-  const mapped = mapColumns(headers);
+  const dataRows = grid.slice(hi + 1).filter((r) => r && r.some((c) => String(c == null ? '' : c).trim()));
+  const hasValue = headers.map((_, i) => dataRows.some((r) => r[i] != null && String(r[i]).trim() !== ''));
+  const mapped = mapColumns(headers, hasValue);
   let locIdx = mapped.col.location != null ? mapped.col.location : -1;
-  if (locIdx < 0) {
+  if (locIdx < 0 || !hasValue[locIdx]) {
     for (let i = 0; i < headers.length; i++) {
-      if (!headers[i] || mapped.used.has(i)) continue;
+      if (!headers[i] || mapped.used.has(i) || !hasValue[i]) continue;
       if (CITY_RE.test(headers[i])) { locIdx = i; mapped.used.add(i); break; }
     }
   }
-  const rows = [];
-  for (let ri = hi + 1; ri < grid.length; ri++) {
-    const line = grid[ri];
-    if (!line || !line.some((c) => String(c == null ? '' : c).trim())) continue;
+  let catIdx = -1;
+  for (let i = 0; i < headers.length; i++) {
+    if (!headers[i] || mapped.used.has(i) || !hasValue[i]) continue;
+    if (CATEGORY_RE.test(headers[i])) { catIdx = i; mapped.used.add(i); break; }
+  }
+  const rows = dataRows.map((line) => {
     const val = (i) => { const v = line[i]; return v == null ? '' : String(v).trim(); };
     const areaVal = mapped.col.area != null ? val(mapped.col.area) : '';
     const row = {
@@ -119,6 +181,7 @@ function parseWorkbook(buf) {
       location: locIdx >= 0 ? val(locIdx) : '',
       area: areaVal,
       areas: splitArea(areaVal),
+      category: catIdx >= 0 ? val(catIdx) : '',
       priority: mapped.col.priority != null ? val(mapped.col.priority) : '',
       subject: mapped.col.subject != null ? val(mapped.col.subject) : '',
       body: mapped.col.body != null ? val(mapped.col.body) : '',
@@ -141,8 +204,8 @@ function parseWorkbook(buf) {
       }
       row.name = first >= 0 ? val(first) : 'Untitled';
     }
-    rows.push(row);
-  }
+    return row;
+  });
   if (!rows.length) throw new Error('empty');
   return { headers, rows };
 }
@@ -225,7 +288,7 @@ function updateNav() {
   $('btn-bookmarks').classList.toggle('active', state.view === 'bookmarks');
 }
 
-/* Promote a city-like extra field to location for rows saved by older versions */
+/* Promote city-like and category-like extra fields for rows saved by older versions */
 function migrateRows(rec) {
   let changed = false;
   rec.rows.forEach((row) => {
@@ -233,6 +296,14 @@ function migrateRows(rec) {
       const i = row.extras.findIndex((e) => CITY_RE.test(e.label || ''));
       if (i >= 0) {
         row.location = row.extras[i].value;
+        row.extras.splice(i, 1);
+        changed = true;
+      }
+    }
+    if (!row.category && row.extras && row.extras.length) {
+      const i = row.extras.findIndex((e) => CATEGORY_RE.test(e.label || ''));
+      if (i >= 0) {
+        row.category = row.extras[i].value;
         row.extras.splice(i, 1);
         changed = true;
       }
@@ -381,10 +452,15 @@ function buildFilterDropdowns() {
   };
   mk($('dd-priority'), 'Priority', [{ value: '', label: 'All priorities' }].concat(
     uniqueValues(rows.map((r) => normPriority(r.priority))).map((p) => ({ value: p, label: 'Priority ' + p }))), 'priority');
-  mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(
-    uniqueValues(rows.reduce((acc, r) => acc.concat(rowAreas(r)), [])).map((a) => ({ value: a, label: a }))), 'area');
+  const catVals = uniqueValues(rows.map((r) => r.category));
+  const areaVals = uniqueValues(rows.reduce((acc, r) => acc.concat(rowAreas(r)), []));
+  if (catVals.length > 0) {
+    mk($('dd-area'), 'Category', [{ value: '', label: 'All areas' }].concat(catVals.map((c) => ({ value: c, label: c }))), 'area');
+  } else {
+    mk($('dd-area'), 'Research area', [{ value: '', label: 'All areas' }].concat(areaVals.map((a) => ({ value: a, label: a }))), 'area');
+  }
   mk($('dd-location'), 'Location', [{ value: '', label: 'All locations' }].concat(
-    uniqueValues(rows.map((r) => r.location)).map((l) => ({ value: l, label: l }))), 'location');
+    uniqueValues(rows.map((r) => resolveLocation(r))).map((l) => ({ value: l, label: l }))), 'location');
   mk($('dd-status'), 'Status', [{ value: '', label: 'All statuses' }].concat(
     STATUSES.map((s) => ({ value: s, label: s }))), 'status');
   mk($('dd-sort'), 'Sort', [
@@ -402,12 +478,14 @@ function visibleRows() {
   if (f.q) {
     const q = f.q.toLowerCase();
     list = list.filter(({ r }) =>
-      [r.name, r.email, r.institution, r.location, r.area, r.subject].some((v) => String(v || '').toLowerCase().indexOf(q) >= 0) ||
+      [r.name, r.email, r.institution, r.location, resolveLocation(r), r.area, r.subject, r.category].some((v) => String(v || '').toLowerCase().indexOf(q) >= 0) ||
       r.extras.some((e) => (e.label + ' ' + e.value).toLowerCase().indexOf(q) >= 0));
   }
   if (f.priority) list = list.filter(({ r }) => normPriority(r.priority) === f.priority);
-  if (f.area) list = list.filter(({ r }) => rowAreas(r).some((a) => a.toLowerCase() === f.area.toLowerCase()));
-  if (f.location) list = list.filter(({ r }) => (r.location || '').toLowerCase() === f.location.toLowerCase());
+  if (f.area) list = list.filter(({ r }) =>
+    (r.category && r.category.toLowerCase() === f.area.toLowerCase()) ||
+    rowAreas(r).some((a) => a.toLowerCase() === f.area.toLowerCase()));
+  if (f.location) list = list.filter(({ r }) => resolveLocation(r).toLowerCase() === f.location.toLowerCase());
   if (f.status) list = list.filter(({ r }) => r.status === f.status);
   if (f.bookmarked) list = list.filter(({ r }) => r.bookmarked);
   if (f.sort === 'name-az') list.sort((a, b) => a.r.name.localeCompare(b.r.name));
@@ -450,6 +528,7 @@ function cardHTML(file, r, i, showFile) {
   const key = file.id + ':' + i;
   const open = state.expandAll || state.open.has(key);
   const tier = (normPriority(r.priority) || 'c').toLowerCase();
+  const loc = resolveLocation(r);
   const prioBadge = r.priority ? '<span class="badge prio-' + tier + '">' + esc(r.priority) + '</span>' : '';
   const fileBadge = showFile ? '<span class="badge file-badge" title="' + esc(file.name) + '">' + esc(file.name) + '</span>' : '';
   const areas = rowAreas(r);
@@ -474,7 +553,7 @@ function cardHTML(file, r, i, showFile) {
     '<div class="field"><div class="field-label">Notes</div><textarea class="notes" placeholder="Your notes…">' + esc(r.notes || '') + '</textarea></div>' +
     emailField +
     '<div class="field"><div class="field-label">Email draft</div><textarea class="draft">' + esc(draftVal) + '</textarea>' +
-    '<div class="draft-actions" style="justify-content:space-between">' +
+    '<div class="draft-actions">' +
     '<button class="btn btn-primary" data-act="send">' + SVG.send + ' Send</button>' +
     '<button class="btn btn-ghost" data-act="copy-draft" title="Copy draft" aria-label="Copy draft">' + SVG.copy + '</button>' +
     '</div></div>';
@@ -483,8 +562,8 @@ function cardHTML(file, r, i, showFile) {
     '<div class="card-head">' +
     '<button class="star' + (r.bookmarked ? ' marked' : '') + '" data-act="star" aria-label="Bookmark" title="' + (r.bookmarked ? 'Remove bookmark' : 'Bookmark') + '">' + SVG.star + '</button>' +
     '<div class="card-title"><h3>' + esc(r.name) + '</h3><div class="card-inst">' +
-    esc(r.institution || '') + (r.institution && r.location ? ' · ' : '') +
-    (r.location ? '<span class="loc">' + esc(r.location) + '</span>' : '') +
+    esc(r.institution || '') + (r.institution && loc ? ' · ' : '') +
+    (loc ? '<span class="loc">' + esc(loc) + '</span>' : '') +
     '</div></div>' +
     '<div class="card-badges">' + prioBadge + fileBadge +
     '<button class="status-chip ' + statusSlug(r.status) + '" data-act="status" title="Change status">' + esc(r.status) + '</button>' +
